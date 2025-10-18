@@ -97,6 +97,37 @@ def scrape(symbol):
     except Exception as e:
         return jsonify({"error": f"Failed to scrape {symbol}: {str(e)}"})
 
+# **📌 Endpoint: `/nseid/<SYMBOL>`**
+@app.route('/nseid/<string:symbol>')
+def fetch_chart_data(symbol):
+    """Fetches Screener chart data with caching."""
+    cache_key = f"chart:{symbol}"
+    cached_data = get_cached_data(cache_key)
+
+    if cached_data:
+        return jsonify(cached_data)  # Return cached result
+
+    browser = selenium_session.get_browser()
+    browser.get(f'https://www.screener.in/company/{symbol}/')
+
+    try:
+        company_id_data = browser.find_element(By.XPATH, '//a[contains(@href,"/quarter/")]')
+        company_url = company_id_data.get_attribute('href')
+
+        m = re.search('quarter/([A-Za-z_0-9.-]+).*', company_url)
+        if m:
+            chart_id = m.group(1)
+            r = requests.get(f"https://www.screener.in/api/company/{chart_id}/chart/?q=Price-DMA50-DMA200-Volume&days=365&consolidated=true")
+            chart_data = r.json()
+
+            result = {"symbol": symbol, "chart_id": chart_id, "chart_data": chart_data}
+            cache_data(cache_key, result)  # Cache result for reuse
+            return jsonify(result)
+        else:
+            return jsonify({"error": "Company ID not found, structure may have changed."})
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch chart data: {str(e)}"})
 
 if __name__ == '__main__':
     app.run(debug=True)
