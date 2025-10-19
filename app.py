@@ -147,7 +147,9 @@ def chart(symbol):
     if not datasets:
         return jsonify({"error": "No datasets found."}), 404
 
-    price_data = next(d["values"] for d in datasets if d["label"] == "Price on NSE")
+    price_data = next(
+    d["values"] for d in datasets if d["label"] in ["Price on NSE", "Price on BSE"]
+    )
     dma50_data = next(d["values"] for d in datasets if d["label"] == "50 DMA")
     dma200_data = next(d["values"] for d in datasets if d["label"] == "200 DMA")
     volume_data = next(d["values"] for d in datasets if d["label"] == "Volume")
@@ -207,7 +209,7 @@ def chart(symbol):
     ax1.grid(alpha=0.4)
 
     ax2 = ax1.twinx()
-    ax2.bar(df["Date"], df["Volume"], color="gray", alpha=0.3)
+    ax2.bar(df["Date"], df["Volume"], color="blue", alpha=0.5)
     ax2.set_ylabel("Volume", color="gray")
 
     plt.title(f"{symbol.upper()} — Price, 50/200DMA, Buy/Sell Markers")
