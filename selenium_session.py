@@ -4,7 +4,8 @@ from selenium.webdriver.chrome.options import Options
 import pickle
 import time
 
-CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
+CHROMEDRIVER_PATH = "/usr/local/bin/chromedriver"
+# CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
 SCREENER_LOGIN_URL = "https://www.screener.in/login?"
 SCREENER_USERNAME = "deepan.antony@gmail.com"
 SCREENER_PASSWORD = "Ansible!234"

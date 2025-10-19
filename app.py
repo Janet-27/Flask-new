@@ -10,6 +10,10 @@ import json
 import re
 import io
 import openpyxl
+from io import BytesIO
+import matplotlib.pyplot as plt
+from flask import Response, jsonify
+
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -128,6 +132,66 @@ def fetch_chart_data(symbol):
 
     except Exception as e:
         return jsonify({"error": f"Failed to fetch chart data: {str(e)}"})
+@app.route('/chart/<string:symbol>')
+def chart(symbol):
+    """Renders a line chart with Price, 50DMA, 200DMA and Volume for given symbol."""
+    # Fetch data from your existing API
+    r = requests.get(f'http://localhost:5000/nseid/{symbol}')  # reuse your route
+    if r.status_code != 200:
+        return jsonify({"error": f"Failed to fetch chart data for {symbol}"}), 500
+    
+    data = r.json().get("chart_data", {})
+    datasets = data.get("datasets", [])
+    if not datasets:
+        return jsonify({"error": "No datasets found."}), 404
+
+    # Extract core datasets
+    price_data = next(d["values"] for d in datasets if d["label"] == "Price on NSE")
+    dma50_data = next(d["values"] for d in datasets if d["label"] == "50 DMA")
+    dma200_data = next(d["values"] for d in datasets if d["label"] == "200 DMA")
+    volume_data = next(d["values"] for d in datasets if d["label"] == "Volume")
+
+    # Convert to DataFrame
+    df_price = pd.DataFrame(price_data, columns=["Date", "Price"])
+    df_price["Date"] = pd.to_datetime(df_price["Date"])
+    df_price["Price"] = df_price["Price"].astype(float)
+
+    df_dma50 = pd.DataFrame(dma50_data, columns=["Date", "DMA50"])
+    df_dma50["Date"] = pd.to_datetime(df_dma50["Date"])
+    df_dma50["DMA50"] = df_dma50["DMA50"].astype(float)
+
+    df_dma200 = pd.DataFrame(dma200_data, columns=["Date", "DMA200"])
+    df_dma200["Date"] = pd.to_datetime(df_dma200["Date"])
+    df_dma200["DMA200"] = df_dma200["DMA200"].astype(float)
+
+    df_volume = pd.DataFrame(volume_data, columns=["Date", "Volume", "Meta"])
+    df_volume["Date"] = pd.to_datetime(df_volume["Date"])
+    df_volume["Volume"] = df_volume["Volume"].astype(int)
+
+    df = df_price.merge(df_dma50, on="Date").merge(df_dma200, on="Date").merge(df_volume, on="Date")
+
+    # ---- Plot ----
+    fig, ax1 = plt.subplots(figsize=(12, 6))
+    ax1.plot(df["Date"], df["Price"], label="Price", color="blue", linewidth=2)
+    ax1.plot(df["Date"], df["DMA50"], label="50 DMA", color="orange", linestyle="--")
+    ax1.plot(df["Date"], df["DMA200"], label="200 DMA", color="red", linestyle="--")
+    ax1.set_ylabel("Price (₹)")
+    ax1.legend(loc="upper left")
+    ax1.grid(alpha=0.4)
+
+    ax2 = ax1.twinx()
+    ax2.bar(df["Date"], df["Volume"], color="gray", alpha=0.3, label="Volume")
+    ax2.set_ylabel("Volume", color="gray")
+
+    plt.title(f"{symbol.upper()} — Price, 50DMA, 200DMA, and Volume")
+    plt.tight_layout()
+
+    # Convert to PNG response
+    img = BytesIO()
+    plt.savefig(img, format='png', dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    img.seek(0)
+    return Response(img.getvalue(), mimetype='image/png')
 
 if __name__ == '__main__':
     app.run(debug=True)
