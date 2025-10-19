@@ -12,6 +12,8 @@ import io
 import openpyxl
 from io import BytesIO
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for Flask
 from flask import Response, jsonify
 
 from selenium.webdriver.common.by import By
@@ -132,11 +134,11 @@ def fetch_chart_data(symbol):
 
     except Exception as e:
         return jsonify({"error": f"Failed to fetch chart data: {str(e)}"})
+    
 @app.route('/chart/<string:symbol>')
 def chart(symbol):
-    """Renders a line chart with Price, 50DMA, 200DMA and Volume for given symbol."""
-    # Fetch data from your existing API
-    r = requests.get(f'http://localhost:5000/nseid/{symbol}')  # reuse your route
+    """Renders an annotated chart with Buy/Sell markers based on DMA crossovers."""
+    r = requests.get(f'http://localhost:5000/nseid/{symbol}')
     if r.status_code != 200:
         return jsonify({"error": f"Failed to fetch chart data for {symbol}"}), 500
     
@@ -145,7 +147,6 @@ def chart(symbol):
     if not datasets:
         return jsonify({"error": "No datasets found."}), 404
 
-    # Extract core datasets
     price_data = next(d["values"] for d in datasets if d["label"] == "Price on NSE")
     dma50_data = next(d["values"] for d in datasets if d["label"] == "50 DMA")
     dma200_data = next(d["values"] for d in datasets if d["label"] == "200 DMA")
@@ -170,28 +171,53 @@ def chart(symbol):
 
     df = df_price.merge(df_dma50, on="Date").merge(df_dma200, on="Date").merge(df_volume, on="Date")
 
-    # ---- Plot ----
-    fig, ax1 = plt.subplots(figsize=(12, 6))
+    # Detect buy/sell signals based on crossings
+    df["prev_price"] = df["Price"].shift(1)
+    df["prev_dma50"] = df["DMA50"].shift(1)
+    df["prev_dma200"] = df["DMA200"].shift(1)
+
+    # Short-term buy/sell
+    df["buy_signal"] = (df["prev_price"] < df["prev_dma50"]) & (df["Price"] > df["DMA50"])
+    df["sell_signal"] = (df["prev_price"] > df["prev_dma50"]) & (df["Price"] < df["DMA50"])
+
+    # Long-term crossovers
+    df["golden_cross"] = (df["prev_dma50"] < df["prev_dma200"]) & (df["DMA50"] > df["DMA200"])
+    df["death_cross"] = (df["prev_dma50"] > df["prev_dma200"]) & (df["DMA50"] < df["DMA200"])
+
+    # Plot
+    fig, ax1 = plt.subplots(figsize=(14, 7))
     ax1.plot(df["Date"], df["Price"], label="Price", color="blue", linewidth=2)
     ax1.plot(df["Date"], df["DMA50"], label="50 DMA", color="orange", linestyle="--")
     ax1.plot(df["Date"], df["DMA200"], label="200 DMA", color="red", linestyle="--")
+
+    # Mark buy/sell points
+    ax1.scatter(df.loc[df["buy_signal"], "Date"], df.loc[df["buy_signal"], "Price"],
+                marker="^", color="green", s=100, label="Buy Signal")
+    ax1.scatter(df.loc[df["sell_signal"], "Date"], df.loc[df["sell_signal"], "Price"],
+                marker="v", color="red", s=100, label="Sell Signal")
+
+    # Mark golden/death crosses
+    ax1.scatter(df.loc[df["golden_cross"], "Date"], df.loc[df["golden_cross"], "DMA50"],
+                marker="^", color="lime", s=200, edgecolor="black", label="Golden Cross")
+    ax1.scatter(df.loc[df["death_cross"], "Date"], df.loc[df["death_cross"], "DMA50"],
+                marker="v", color="darkred", s=200, edgecolor="black", label="Death Cross")
+
     ax1.set_ylabel("Price (₹)")
     ax1.legend(loc="upper left")
     ax1.grid(alpha=0.4)
 
     ax2 = ax1.twinx()
-    ax2.bar(df["Date"], df["Volume"], color="gray", alpha=0.3, label="Volume")
+    ax2.bar(df["Date"], df["Volume"], color="gray", alpha=0.3)
     ax2.set_ylabel("Volume", color="gray")
 
-    plt.title(f"{symbol.upper()} — Price, 50DMA, 200DMA, and Volume")
+    plt.title(f"{symbol.upper()} — Price, 50/200DMA, Buy/Sell Markers")
     plt.tight_layout()
 
-    # Convert to PNG response
     img = BytesIO()
-    plt.savefig(img, format='png', dpi=150, bbox_inches="tight")
+    plt.savefig(img, format="png", dpi=150, bbox_inches="tight")
     plt.close(fig)
     img.seek(0)
-    return Response(img.getvalue(), mimetype='image/png')
+    return Response(img.getvalue(), mimetype="image/png")
 
 if __name__ == '__main__':
     app.run(debug=True)
