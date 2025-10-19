@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ symbol.upper() }} — Trend Analysis</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f8f9fa;
+            margin: 40px;
+        }
+        h1 { color: #333; }
+        .summary {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        .summary p {
+            margin: 8px 0;
+            font-size: 16px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 10px;
+            border-bottom: 1px solid #e0e0e0;
+            text-align: center;
+        }
+        th {
+            background: #007BFF;
+            color: white;
+        }
+        tr:hover {
+            background: #f1f7ff;
+        }
+        img {
+            width: 100%;
+            margin-top: 20px;
+            border-radius: 8px;
+        }
+        .stage {
+            font-weight: bold;
+            font-size: 18px;
+        }
+        .Stage1 { color: #28a745; }  /* Accumulation */
+        .Stage2 { color: #007bff; }  /* Uptrend */
+        .Stage3 { color: #ffcc00; }  /* Distribution */
+        .Stage4 { color: #dc3545; }  /* Decline */
+    </style>
+</head>
+<body>
+    <h1>{{ symbol.upper() }} — Trend Analysis</h1>
+
+    <div class="summary">
+        <p><strong>Current Stage:</strong> 
+            <span class="stage Stage{{ current_stage[6] if current_stage else '' }}">
+                {{ current_stage }}
+            </span>
+        </p>
+        <p><strong>Last Stage Change:</strong> {{ last_change_date }}</p>
+    </div>
+
+    <h2>Stage History</h2>
+    <table>
+        <tr>
+            <th>Stage</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Duration (days)</th>
+        </tr>
+        {% for s in stage_durations %}
+        <tr>
+            <td>{{ s.Stage }}</td>
+            <td>{{ s.Start }}</td>
+            <td>{{ s.End }}</td>
+            <td>{{ s.Duration_days }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <img src="{{ chart_base64 }}" alt="Trend Chart">
+</body>
+</html>
