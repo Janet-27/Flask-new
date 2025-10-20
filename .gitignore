@@ -1,2 +1,9 @@
+# Byte-compiled / cache files
+__pycache__/
 *.pyc
+
+# Pickle files
 *.pkl
+
+# Virtual environment
+venv/
