@@ -123,7 +123,7 @@ def fetch_chart_data(symbol):
         m = re.search('quarter/([A-Za-z_0-9.-]+).*', company_url)
         if m:
             chart_id = m.group(1)
-            r = requests.get(f"https://www.screener.in/api/company/{chart_id}/chart/?q=Price-DMA50-DMA200-Volume&days=365&consolidated=true")
+            r = requests.get(f"https://www.screener.in/api/company/{chart_id}/chart/?q=Price-DMA50-DMA200-Volume&days=180&consolidated=true")
             chart_data = r.json()
 
             result = {"symbol": symbol, "chart_id": chart_id, "chart_data": chart_data}
