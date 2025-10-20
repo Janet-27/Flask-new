@@ -123,7 +123,10 @@ def fetch_chart_data(symbol):
         m = re.search('quarter/([A-Za-z_0-9.-]+).*', company_url)
         if m:
             chart_id = m.group(1)
-            r = requests.get(f"https://www.screener.in/api/company/{chart_id}/chart/?q=Price-DMA50-DMA200-Volume&days=180&consolidated=true")
+            # r = requests.get(f"https://www.screener.in/api/company/{chart_id}/chart/?q=Price-DMA50-DMA200-Volume&days=180&consolidated=true")
+            days = request.args.get("days", "365")
+            url = f"https://www.screener.in/api/company/{chart_id}/chart/?q=Price-DMA50-DMA200-Volume&days={days}&consolidated=true"
+            r = requests.get(url)
             chart_data = r.json()
 
             result = {"symbol": symbol, "chart_id": chart_id, "chart_data": chart_data}
@@ -229,7 +232,9 @@ def identify_trend(symbol):
     Returns both a color-coded chart and a textual summary (JSON).
     """
     # --- Fetch chart data from cache or Screener API ---
-    r = requests.get(f'http://localhost:5000/nseid/{symbol}')
+    # r = requests.get(f'http://localhost:5000/nseid/{symbol}')
+    days = request.args.get("days", "365")
+    r = requests.get(f'http://localhost:5000/nseid/{symbol}?days={days}')
     if r.status_code != 200:
         return jsonify({"error": f"Failed to fetch chart data for {symbol}"}), 500
 
@@ -349,7 +354,9 @@ def trendview(symbol):
     Browser-friendly HTML dashboard for trend visualization.
     Fetches JSON from /identifytrend/<symbol> and renders an HTML summary.
     """
-    r = requests.get(f'http://localhost:5000/identifytrend/{symbol}')
+    # r = requests.get(f'http://localhost:5000/identifytrend/{symbol}')
+    days = request.args.get("days", "365")
+    r = requests.get(f'http://localhost:5000/identifytrend/{symbol}?days={days}')
     if r.status_code != 200:
         return f"<h2>Failed to fetch trend data for {symbol}</h2>", 500
 

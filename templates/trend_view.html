@@ -35,7 +35,21 @@ th{background:var(--accent);color:#fff}
   <p><strong>Current Stage:</strong> {{ current_stage }}</p>
   <p><strong>Last Stage Change:</strong> {{ last_change_date }}</p>
 </div>
+<div id="daySelector" style="margin-bottom:15px;">
+  <strong>Range:</strong>
+  <button onclick="changeDays(30)">30D</button>
+  <button onclick="changeDays(90)">90D</button>
+  <button onclick="changeDays(180)">180D</button>
+  <button onclick="changeDays(365)">1Y</button>
+</div>
 
+<script>
+function changeDays(days) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('days', days);
+  window.location.href = url.toString();
+}
+</script>
 <div id="controls">
   <button id="togglePrice">Price</button>
   <button id="toggle50">50 DMA</button>
