@@ -3,79 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <title>{{ symbol.upper() }} — Trend Analysis</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
+        :root {
+            --bg: #f8f9fa;
+            --text: #222;
+            --card: white;
+            --accent: #007BFF;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #121212;
+                --text: #eaeaea;
+                --card: #1e1e1e;
+                --accent: #4da3ff;
+            }
+        }
         body {
-            font-family: Arial, sans-serif;
-            background: #f8f9fa;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, sans-serif;
             margin: 40px;
         }
-        h1 { color: #333; }
+        h1 { margin-bottom: 0.2em; }
         .summary {
-            background: white;
+            background: var(--card);
             padding: 20px;
             border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
             margin-bottom: 30px;
         }
-        .summary p {
-            margin: 8px 0;
-            font-size: 16px;
-        }
+        .summary p { margin: 8px 0; font-size: 16px; }
         table {
             width: 100%;
             border-collapse: collapse;
-            background: white;
+            background: var(--card);
             border-radius: 8px;
             overflow: hidden;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
         }
         th, td {
             padding: 10px;
-            border-bottom: 1px solid #e0e0e0;
             text-align: center;
+            border-bottom: 1px solid rgba(150,150,150,0.2);
         }
         th {
-            background: #007BFF;
+            background: var(--accent);
             color: white;
         }
-        tr:hover {
-            background: #f1f7ff;
-        }
-        img {
+        #chart {
             width: 100%;
-            margin-top: 20px;
-            border-radius: 8px;
+            height: 650px;
         }
-        .stage {
-            font-weight: bold;
-            font-size: 18px;
-        }
-        .Stage1 { color: #28a745; }  /* Accumulation */
-        .Stage2 { color: #007bff; }  /* Uptrend */
-        .Stage3 { color: #ffcc00; }  /* Distribution */
-        .Stage4 { color: #dc3545; }  /* Decline */
     </style>
 </head>
 <body>
     <h1>{{ symbol.upper() }} — Trend Analysis</h1>
-
     <div class="summary">
-        <p><strong>Current Stage:</strong> 
-            <span class="stage Stage{{ current_stage[6] if current_stage else '' }}">
-                {{ current_stage }}
-            </span>
-        </p>
+        <p><strong>Current Stage:</strong> {{ current_stage }}</p>
         <p><strong>Last Stage Change:</strong> {{ last_change_date }}</p>
     </div>
 
     <h2>Stage History</h2>
     <table>
-        <tr>
-            <th>Stage</th>
-            <th>Start</th>
-            <th>End</th>
-            <th>Duration (days)</th>
-        </tr>
+        <tr><th>Stage</th><th>Start</th><th>End</th><th>Duration (days)</th></tr>
         {% for s in stage_durations %}
         <tr>
             <td>{{ s.Stage }}</td>
@@ -86,6 +77,89 @@
         {% endfor %}
     </table>
 
-    <img src="{{ chart_base64 }}" alt="Trend Chart">
+    <div id="chart"></div>
+
+    <script>
+        const data = {{ trend_data|safe }};
+        const base64Chart = data.chart_base64;
+
+        // Extract core series from backend JSON
+        const fetchChart = async () => {
+            const res = await fetch(`/nseid/${data.symbol.toLowerCase()}`);
+            const json = await res.json();
+            return json.chart_data.datasets;
+        };
+
+        fetchChart().then(datasets => {
+            const price = datasets.find(d => d.label.includes("Price")).values.map(v => ({x: v[0], y: parseFloat(v[1])}));
+            const dma50 = datasets.find(d => d.label.includes("50 DMA")).values.map(v => ({x: v[0], y: parseFloat(v[1])}));
+            const dma200 = datasets.find(d => d.label.includes("200 DMA")).values.map(v => ({x: v[0], y: parseFloat(v[1])}));
+
+            // Stage colors
+            const stageColors = {
+                "Stage 1 - Accumulation": "rgba(40,167,69,0.2)",
+                "Stage 2 - Uptrend": "rgba(0,123,255,0.2)",
+                "Stage 3 - Distribution": "rgba(255,193,7,0.2)",
+                "Stage 4 - Decline": "rgba(220,53,69,0.2)"
+            };
+
+            const stages = data.stage_durations || [];
+
+            // Build shaded background traces
+            const stageShapes = stages.map(s => ({
+                type: 'rect',
+                xref: 'x', yref: 'paper',
+                x0: s.Start, x1: s.End,
+                y0: 0, y1: 1,
+                fillcolor: stageColors[s.Stage] || 'rgba(200,200,200,0.2)',
+                opacity: 0.3,
+                layer: 'below',
+                line: { width: 0 }
+            }));
+
+            // Line traces
+            const traces = [
+                {
+                    x: price.map(p => p.x),
+                    y: price.map(p => p.y),
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: 'Price',
+                    line: { color: '#007bff', width: 2 }
+                },
+                {
+                    x: dma50.map(p => p.x),
+                    y: dma50.map(p => p.y),
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: '50 DMA',
+                    line: { color: 'orange', width: 1.8, dash: 'dash' }
+                },
+                {
+                    x: dma200.map(p => p.x),
+                    y: dma200.map(p => p.y),
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: '200 DMA',
+                    line: { color: 'red', width: 1.8, dash: 'dash' }
+                }
+            ];
+
+            // Layout
+            const layout = {
+                title: `${data.symbol} — Interactive Trend Analysis`,
+                shapes: stageShapes,
+                xaxis: { title: "Date", showgrid: true },
+                yaxis: { title: "Price (₹)", showgrid: true },
+                paper_bgcolor: "var(--bg)",
+                plot_bgcolor: "var(--bg)",
+                font: { color: "var(--text)" },
+                hovermode: "x unified",
+                legend: { orientation: "h", y: -0.2 }
+            };
+
+            Plotly.newPlot('chart', traces, layout, {responsive: true});
+        });
+    </script>
 </body>
 </html>

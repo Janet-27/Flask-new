@@ -360,7 +360,8 @@ def trendview(symbol):
         current_stage=data.get("current_stage"),
         last_change_date=data.get("last_change_date"),
         stage_durations=data.get("stage_durations", []),
-        chart_base64=data.get("chart_base64")
+        # chart_base64=data.get("chart_base64")
+        trend_data=json.dumps(data)
     )
 
 if __name__ == '__main__':
