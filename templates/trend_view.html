@@ -1,192 +1,157 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>{{ symbol.upper() }} — Trend Analysis</title>
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <style>
-        :root {
-            --bg: #f8f9fa;
-            --text: #222;
-            --card: white;
-            --accent: #007BFF;
-        }
-        @media (prefers-color-scheme: dark) {
-            :root {
-                --bg: #121212;
-                --text: #eaeaea;
-                --card: #1e1e1e;
-                --accent: #4da3ff;
-            }
-        }
-        body {
-            background: var(--bg);
-            color: var(--text);
-            font-family: system-ui, sans-serif;
-            margin: 40px;
-        }
-        h1 { margin-bottom: 0.2em; }
-        .summary {
-            background: var(--card);
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            margin-bottom: 30px;
-        }
-        .summary p { margin: 8px 0; font-size: 16px; }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            background: var(--card);
-            border-radius: 8px;
-            overflow: hidden;
-            margin-bottom: 30px;
-        }
-        th, td {
-            padding: 10px;
-            text-align: center;
-            border-bottom: 1px solid rgba(150,150,150,0.2);
-        }
-        th {
-            background: var(--accent);
-            color: white;
-        }
-        #chart, #timeline {
-            width: 100%;
-            height: 600px;
-            margin-bottom: 60px;
-        }
-        #timeline {
-            height: 250px;
-        }
-    </style>
+<meta charset="UTF-8">
+<title>{{ symbol.upper() }} — Trend Dashboard</title>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<style>
+:root {
+  --bg:#f8f9fa;--text:#222;--card:#fff;--accent:#007BFF;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#121212;--text:#eee;--card:#1e1e1e;--accent:#4da3ff;}
+}
+body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;margin:40px;}
+h1{margin-bottom:.2em}
+.summary{background:var(--card);padding:20px;border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,.2);margin-bottom:20px;}
+#controls{margin:15px 0;display:flex;flex-wrap:wrap;gap:10px}
+button{
+  background:var(--accent);color:#fff;border:none;border-radius:6px;
+  padding:8px 14px;cursor:pointer;font-size:14px;
+  transition:.2s;user-select:none
+}
+button:hover{opacity:.8}
+button.inactive{background:#6c757d}
+table{width:100%;border-collapse:collapse;background:var(--card);border-radius:8px;overflow:hidden;margin:20px 0 30px}
+th,td{padding:10px;text-align:center;border-bottom:1px solid rgba(150,150,150,.2)}
+th{background:var(--accent);color:#fff}
+#chart,#timeline{width:100%;height:600px;margin-bottom:50px}
+#timeline{height:250px}
+</style>
 </head>
 <body>
-    <h1>{{ symbol.upper() }} — Trend Analysis</h1>
-    <div class="summary">
-        <p><strong>Current Stage:</strong> {{ current_stage }}</p>
-        <p><strong>Last Stage Change:</strong> {{ last_change_date }}</p>
-    </div>
+<h1>{{ symbol.upper() }} — Trend Analysis</h1>
+<div class="summary">
+  <p><strong>Current Stage:</strong> {{ current_stage }}</p>
+  <p><strong>Last Stage Change:</strong> {{ last_change_date }}</p>
+</div>
 
-    <h2>Stage History</h2>
-    <table>
-        <tr><th>Stage</th><th>Start</th><th>End</th><th>Duration (days)</th></tr>
-        {% for s in stage_durations %}
-        <tr>
-            <td>{{ s.Stage }}</td>
-            <td>{{ s.Start }}</td>
-            <td>{{ s.End }}</td>
-            <td>{{ s.Duration_days }}</td>
-        </tr>
-        {% endfor %}
-    </table>
+<div id="controls">
+  <button id="togglePrice">Price</button>
+  <button id="toggle50">50 DMA</button>
+  <button id="toggle200">200 DMA</button>
+  <button id="toggleBuySell">Buy/Sell</button>
+  <button id="toggleCrosses">Crosses</button>
+  <button id="toggleStages">Stage Shading</button>
+</div>
 
-    <div id="chart"></div>
-    <h2>Stage Transition Timeline</h2>
-    <div id="timeline"></div>
+<h2>Stage History</h2>
+<table>
+  <tr><th>Stage</th><th>Start</th><th>End</th><th>Duration (days)</th></tr>
+  {% for s in stage_durations %}
+  <tr><td>{{ s.Stage }}</td><td>{{ s.Start }}</td><td>{{ s.End }}</td><td>{{ s.Duration_days }}</td></tr>
+  {% endfor %}
+</table>
 
-    <script>
-        const data = {{ trend_data|safe }};
+<div id="chart"></div>
+<h2>Stage Transition Timeline</h2>
+<div id="timeline"></div>
 
-        // --- Fetch full series for main chart ---
-        const fetchChart = async () => {
-            const res = await fetch(`/nseid/${data.symbol.toLowerCase()}`);
-            const json = await res.json();
-            return json.chart_data.datasets;
-        };
+<script>
+const trendData={{trend_data|safe}};
+async function loadData(){
+  const res=await fetch(`/nseid/${trendData.symbol.toLowerCase()}`); 
+  const json=await res.json();
+  const ds=json.chart_data.datasets;
 
-        fetchChart().then(datasets => {
-            const price = datasets.find(d => d.label.includes("Price")).values.map(v => ({x: v[0], y: parseFloat(v[1])}));
-            const dma50 = datasets.find(d => d.label.includes("50 DMA")).values.map(v => ({x: v[0], y: parseFloat(v[1])}));
-            const dma200 = datasets.find(d => d.label.includes("200 DMA")).values.map(v => ({x: v[0], y: parseFloat(v[1])}));
+  const price=ds.find(d=>d.label.includes("Price")).values.map(v=>({x:v[0],y:+v[1]}));
+  const dma50=ds.find(d=>d.label.includes("50 DMA")).values.map(v=>({x:v[0],y:+v[1]}));
+  const dma200=ds.find(d=>d.label.includes("200 DMA")).values.map(v=>({x:v[0],y:+v[1]}));
 
-            const stageColors = {
-                "Stage 1 - Accumulation": "rgba(40,167,69,0.2)",
-                "Stage 2 - Uptrend": "rgba(0,123,255,0.2)",
-                "Stage 3 - Distribution": "rgba(255,193,7,0.2)",
-                "Stage 4 - Decline": "rgba(220,53,69,0.2)"
-            };
+  const buy=[],sell=[],golden=[],death=[];
+  for(let i=1;i<price.length;i++){
+    const p0=price[i-1].y,p1=price[i].y, d50_0=dma50[i-1].y,d50_1=dma50[i].y,d200_0=dma200[i-1].y,d200_1=dma200[i].y;
+    if(p0<d50_0&&p1>d50_1)buy.push(price[i]);
+    if(p0>d50_0&&p1<d50_1)sell.push(price[i]);
+    if(d50_0<d200_0&&d50_1>d200_1)golden.push(dma50[i]);
+    if(d50_0>d200_0&&d50_1<d200_1)death.push(dma50[i]);
+  }
 
-            const stages = data.stage_durations || [];
+  const stageColors={
+    "Stage 1 - Accumulation":"rgba(40,167,69,0.2)",
+    "Stage 2 - Uptrend":"rgba(0,123,255,0.2)",
+    "Stage 3 - Distribution":"rgba(255,193,7,0.2)",
+    "Stage 4 - Decline":"rgba(220,53,69,0.2)"
+  };
+  const stages=trendData.stage_durations||[];
 
-            // --- Main Chart ---
-            const stageShapes = stages.map(s => ({
-                type: 'rect',
-                xref: 'x', yref: 'paper',
-                x0: s.Start, x1: s.End,
-                y0: 0, y1: 1,
-                fillcolor: stageColors[s.Stage] || 'rgba(200,200,200,0.2)',
-                opacity: 0.3,
-                layer: 'below',
-                line: { width: 0 }
-            }));
+  const shapes=stages.map(s=>({
+    type:'rect',xref:'x',yref:'paper',x0:s.Start,x1:s.End,y0:0,y1:1,
+    fillcolor:stageColors[s.Stage]||'rgba(200,200,200,0.2)',opacity:0.3,layer:'below',line:{width:0}
+  }));
 
-            const traces = [
-                {
-                    x: price.map(p => p.x),
-                    y: price.map(p => p.y),
-                    type: 'scatter',
-                    mode: 'lines',
-                    name: 'Price',
-                    line: { color: '#007bff', width: 2 }
-                },
-                {
-                    x: dma50.map(p => p.x),
-                    y: dma50.map(p => p.y),
-                    type: 'scatter',
-                    mode: 'lines',
-                    name: '50 DMA',
-                    line: { color: 'orange', width: 1.8, dash: 'dash' }
-                },
-                {
-                    x: dma200.map(p => p.x),
-                    y: dma200.map(p => p.y),
-                    type: 'scatter',
-                    mode: 'lines',
-                    name: '200 DMA',
-                    line: { color: 'red', width: 1.8, dash: 'dash' }
-                }
-            ];
+  const traces=[
+    {x:price.map(p=>p.x),y:price.map(p=>p.y),type:'scatter',mode:'lines',name:'Price',line:{color:'#007bff',width:2},visible:true},
+    {x:dma50.map(p=>p.x),y:dma50.map(p=>p.y),type:'scatter',mode:'lines',name:'50 DMA',line:{color:'orange',dash:'dash'},visible:true},
+    {x:dma200.map(p=>p.x),y:dma200.map(p=>p.y),type:'scatter',mode:'lines',name:'200 DMA',line:{color:'red',dash:'dash'},visible:true},
+    {x:buy.map(p=>p.x),y:buy.map(p=>p.y),type:'scatter',mode:'markers',name:'Buy',marker:{color:'green',size:9,symbol:'triangle-up'},visible:true},
+    {x:sell.map(p=>p.x),y:sell.map(p=>p.y),type:'scatter',mode:'markers',name:'Sell',marker:{color:'red',size:9,symbol:'triangle-down'},visible:true},
+    {x:golden.map(p=>p.x),y:golden.map(p=>p.y),type:'scatter',mode:'markers',name:'Golden Cross',marker:{color:'black',size:11,symbol:'star'},visible:true},
+    {x:death.map(p=>p.x),y:death.map(p=>p.y),type:'scatter',mode:'markers',name:'Death Cross',marker:{color:'darkred',size:11,symbol:'x'},visible:true}
+  ];
 
-            const layout = {
-                title: `${data.symbol} — Interactive Trend Analysis`,
-                shapes: stageShapes,
-                xaxis: { title: "Date", showgrid: true },
-                yaxis: { title: "Price (₹)", showgrid: true },
-                paper_bgcolor: "var(--bg)",
-                plot_bgcolor: "var(--bg)",
-                font: { color: "var(--text)" },
-                hovermode: "x unified",
-                legend: { orientation: "h", y: -0.2 }
-            };
+  const layout={
+    title:`${trendData.symbol} — Interactive Trend Dashboard`,
+    shapes:shapes,
+    xaxis:{title:"Date"},yaxis:{title:"Price (₹)"},
+    paper_bgcolor:"var(--bg)",plot_bgcolor:"var(--bg)",
+    font:{color:"var(--text)"},hovermode:"x unified",
+    legend:{orientation:"h",y:-0.3}
+  };
+  Plotly.newPlot('chart',traces,layout,{responsive:true});
 
-            Plotly.newPlot('chart', traces, layout, {responsive: true});
+  // --- toggles ---
+  const ids={
+    togglePrice:[0],
+    toggle50:[1],
+    toggle200:[2],
+    toggleBuySell:[3,4],
+    toggleCrosses:[5,6],
+    toggleStages:'shapes'
+  };
+  for(const id in ids){
+    document.getElementById(id).onclick=()=>{
+      const btn=document.getElementById(id);
+      const active=!btn.classList.contains('inactive');
+      btn.classList.toggle('inactive');
+      if(ids[id]==='shapes'){
+        const update={};
+        update.shapes=active?[]:shapes;
+        Plotly.relayout('chart',update);
+      }else{
+        const vis=active?'legendonly':true;
+        ids[id].forEach(i=>Plotly.restyle('chart','visible',vis,[i]));
+      }
+    };
+  }
 
-            // --- Stage Timeline ---
-            const timeline = {
-                type: 'bar',
-                orientation: 'h',
-                x: stages.map(s => s.Duration_days),
-                y: stages.map(s => s.Stage),
-                text: stages.map(s => `${s.Start} → ${s.End}`),
-                marker: {
-                    color: stages.map(s => stageColors[s.Stage].replace('0.2', '0.6'))
-                },
-                hovertemplate: '%{y}<br>%{text}<br>Duration: %{x} days<extra></extra>'
-            };
-
-            const layoutTimeline = {
-                title: `${data.symbol} — Stage Duration Overview`,
-                paper_bgcolor: "var(--bg)",
-                plot_bgcolor: "var(--bg)",
-                font: { color: "var(--text)" },
-                xaxis: { title: "Duration (Days)" },
-                yaxis: { title: "", automargin: true },
-                margin: { t: 60, l: 150 }
-            };
-
-            Plotly.newPlot('timeline', [timeline], layoutTimeline, {responsive: true});
-        });
-    </script>
+  // --- Timeline chart ---
+  const tl={type:'bar',orientation:'h',
+    x:stages.map(s=>s.Duration_days),
+    y:stages.map(s=>s.Stage),
+    text:stages.map(s=>`${s.Start} → ${s.End}`),
+    marker:{color:stages.map(s=>stageColors[s.Stage].replace('0.2','0.6'))},
+    hovertemplate:'%{y}<br>%{text}<br>Duration %{x} days<extra></extra>'
+  };
+  const layTL={
+    title:`${trendData.symbol} — Stage Duration Overview`,
+    paper_bgcolor:"var(--bg)",plot_bgcolor:"var(--bg)",
+    font:{color:"var(--text)"},xaxis:{title:"Duration (days)"},
+    yaxis:{automargin:true},margin:{t:60,l:150}
+  };
+  Plotly.newPlot('timeline',[tl],layTL,{responsive:true});
+}
+loadData();
+</script>
 </body>
 </html>
