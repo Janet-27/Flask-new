@@ -74,7 +74,9 @@ function changeDays(days) {
 <script>
 const trendData={{trend_data|safe}};
 async function loadData(){
-  const res=await fetch(`/nseid/${trendData.symbol.toLowerCase()}`); 
+  const urlParams = new URLSearchParams(window.location.search);
+  const days = urlParams.get('days') || '365';
+  const res = await fetch(`/nseid/${trendData.symbol.toLowerCase()}?days=${days}`);
   const json=await res.json();
   const ds=json.chart_data.datasets;
 
@@ -114,16 +116,34 @@ async function loadData(){
     {x:death.map(p=>p.x),y:death.map(p=>p.y),type:'scatter',mode:'markers',name:'Death Cross',marker:{color:'darkred',size:11,symbol:'x'},visible:true}
   ];
 
-  const layout={
-    title:`${trendData.symbol} — Interactive Trend Dashboard`,
-    shapes:shapes,
-    xaxis:{title:"Date"},yaxis:{title:"Price (₹)"},
-    paper_bgcolor:"var(--bg)",plot_bgcolor:"var(--bg)",
-    font:{color:"var(--text)"},hovermode:"x unified",
-    legend:{orientation:"h",y:-0.3}
+  const layout = {
+    title: `${trendData.symbol} — Interactive Trend Dashboard`,
+    shapes: shapes,
+    xaxis: {
+      title: "Date",
+      rangeselector: {
+        buttons: [
+          {count: 6, label: '6M', step: 'month', stepmode: 'backward'},
+          {count: 1, label: '1Y', step: 'year', stepmode: 'backward'},
+          {count: 3, label: '3Y', step: 'year', stepmode: 'backward'},
+          {count: 5, label: '5Y', step: 'year', stepmode: 'backward'},
+          {count: 10, label: '10Y', step: 'year', stepmode: 'backward'},
+          {step: 'all', label: 'All'}
+        ]
+      },
+      rangeslider: { visible: true }
+    },
+    yaxis: { title: "Price (₹)" },
+    paper_bgcolor: "var(--bg)",
+    plot_bgcolor: "var(--bg)",
+    font: { color: "var(--text)" },
+    hovermode: "x unified",
+    legend: { orientation: "h", y: -0.3 }
   };
   Plotly.newPlot('chart',traces,layout,{responsive:true});
-
+  Plotly.relayout('chart', {
+    'xaxis.range': [price[0].x, price[price.length - 1].x]
+  });
   // --- toggles ---
   const ids={
     togglePrice:[0],
