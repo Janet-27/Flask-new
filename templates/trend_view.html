@@ -5,6 +5,17 @@
 <title>{{ symbol.upper() }} — Trend Dashboard</title>
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <style>
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  color: #fff;
+  margin-left: 8px;
+}
+
+.badge-current { background-color: #007bff; }  /* blue */
+.badge-previous { background-color: #6c757d; } /* grey */
 :root {
   --bg:#f8f9fa;--text:#222;--card:#fff;--accent:#007BFF;
 }
@@ -38,8 +49,14 @@ th{background:var(--accent);color:#fff}
 <body>
 <h1>{{ symbol.upper() }} — Trend Analysis</h1>
 <div class="summary">
-  <p><strong>Current Stage:</strong> {{ current_stage }}</p>
-  <p><strong>Previous Stage:</strong> {{ trend_data.previous_stage if trend_data.previous_stage else 'N/A' }}</p>
+  <p><strong>Current Stage:</strong> 
+    {{ current_stage }} 
+    <span class="badge badge-current">Current</span>
+  </p>
+  <p><strong>Previous Stage:</strong> 
+    {{ previous_stage }} 
+    <span class="badge badge-previous">Previous</span>
+  </p>
   <p><strong>Last Stage Change:</strong> {{ last_change_date }}</p>
 </div>
 <div id="daySelector" style="margin-bottom:15px;">

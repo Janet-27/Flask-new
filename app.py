@@ -278,16 +278,27 @@ def identify_trend(symbol):
     df["Stage"] = np.select(conditions, choices, default=None)
 
     # --- Identify latest and previous stage ---
-    stage_changes = df.loc[df["Stage"].shift() != df["Stage"], ["Date", "Stage"]].dropna().reset_index(drop=True)
+    stage_changes = (
+        df.loc[df["Stage"].shift() != df["Stage"], ["Date", "Stage"]]
+        .dropna()
+        .reset_index(drop=True)
+    )
 
     if not stage_changes.empty:
-       latest_stage = stage_changes["Stage"].iloc[-1]
-       last_change_date = stage_changes["Date"].iloc[-1]
-       previous_stage = stage_changes["Stage"].iloc[-2] if len(stage_changes) > 1 else "No previous stage in selected range"
+        latest_stage = stage_changes["Stage"].iloc[-1]
+        last_change_date = stage_changes["Date"].iloc[-1]
+
+        # 🩵 FIX: Make sure we have a fallback if only one stage exists
+        if len(stage_changes) > 1:
+            previous_stage = stage_changes["Stage"].iloc[-2]
+        else:
+            # fallback to earliest available stage if only one stage detected
+            first_stage = df["Stage"].dropna().iloc[0] if not df["Stage"].dropna().empty else "Unknown"
+            previous_stage = first_stage if first_stage != latest_stage else "No previous stage in selected range"
     else:
-       latest_stage = "Unknown"
-       last_change_date = "N/A"
-       previous_stage = "N/A"
+        latest_stage = "Unknown"
+        last_change_date = "N/A"
+        previous_stage = "Unknown"
 
     # --- Summarize trend durations ---
     stage_summary = (
@@ -374,9 +385,9 @@ def trendview(symbol):
         "trend_view.html",
         symbol=data.get("symbol"),
         current_stage=data.get("current_stage"),
+        previous_stage=data.get("previous_stage"),
         last_change_date=data.get("last_change_date"),
         stage_durations=data.get("stage_durations", []),
-        # chart_base64=data.get("chart_base64")
         trend_data=json.dumps(data)
     )
 
