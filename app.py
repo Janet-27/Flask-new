@@ -351,14 +351,21 @@ def identify_trend(symbol):
     plt.close(fig)
     img.seek(0)
 
+    # --- Format last change date ---
+    try:
+        formatted_date = pd.to_datetime(last_change_date).strftime("%Y - %b - %d")
+    except Exception:
+        formatted_date = "N/A"
+
     # --- Build JSON summary ---
     summary = {
         "symbol": symbol.upper(),
         "current_stage": latest_stage,
         "previous_stage": previous_stage,
-        "last_change_date": str(last_change_date.date()) if pd.notna(last_change_date) else "N/A",
+        "last_change_date": formatted_date,
         "stage_durations": stage_summary.to_dict(orient="records"),
     }
+
 
     # --- Return both JSON + Image ---
     # Flask doesn’t support multiple body types directly, so return multipart or base64
