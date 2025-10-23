@@ -13,6 +13,7 @@ import openpyxl
 from io import BytesIO
 import matplotlib.pyplot as plt
 import matplotlib
+import smtplib, ssl
 matplotlib.use('Agg')  # Use non-interactive backend for Flask
 from flask import Response, jsonify, render_template
 
@@ -33,6 +34,47 @@ from cache import cache_data, get_cached_data
 
 from selenium import webdriver
 import sys
+
+def send_email(subject, body, to_addrs=None):
+    import smtplib, ssl
+    sender_email = "deepan.antony@gmail.com"
+    password = "mohzxqmoeiisouxn"  # 16-char Google App Password
+
+    if to_addrs is None:
+        to_addrs = ["mike.bmails@gmail.com"]
+
+    message = f"Subject: {subject}\n\n{body}"
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+            server.set_debuglevel(1)  # enable verbose output
+            server.starttls(context=ssl.create_default_context())
+            server.login(sender_email, password)
+            server.sendmail(sender_email, to_addrs, message.encode("utf-8"))
+        print("✅ Email sent successfully.")
+    except Exception as e:
+        print(f"❌ Email failed: {e}")
+
+# def send_email(subject, body, to_addrs=None):
+#     """Sends an email notification using Gmail SMTP."""
+#     sender_email = "deepan.antony@gmail.com"        # 🔹 your sender address
+#     password = "mohzxqmoeiisouxn"                   # 🔹 your app-password (not Gmail password!)
+#     if to_addrs is None:
+#         to_addrs = ["mike.bmails@gmail.com"]        # 🔹 default recipients
+
+#     smtp_server = "smtp.gmail.com"
+#     port = 587
+#     context = ssl.create_default_context()
+
+#     message = f"Subject: {subject}\n\n{body}"
+#     try:
+#         with smtplib.SMTP(smtp_server, port) as server:
+#             server.starttls(context=context)
+#             server.login(sender_email, password)
+#             server.sendmail(sender_email, to_addrs, message.encode("utf-8"))
+#         print(f"📧 Email sent successfully to {to_addrs}")
+#     except Exception as e:
+#         print(f"⚠️ Email failed: {e}")
+
 app = Flask(__name__)
 
 @app.route('/')
@@ -356,6 +398,44 @@ def identify_trend(symbol):
         formatted_date = pd.to_datetime(last_change_date).strftime("%Y - %b - %d")
     except Exception:
         formatted_date = "N/A"
+
+
+    # --- Send email if new stage is detected ---
+    try:
+        subject = f"{symbol.upper()} Stage Update: {latest_stage}"
+        body = (
+            f"Symbol: {symbol.upper()}\n"
+            f"Current Stage: {latest_stage}\n"
+            f"Previous Stage: {previous_stage}\n"
+            f"Last Change Date: {formatted_date}\n\n"
+            "Visit dashboard for full chart view:\n"
+            f"http://localhost:5000/trendview/{symbol}"
+        )
+        print(f"📬 Checking if email should be sent for {symbol}...")
+        try:
+            subject = f"{symbol.upper()} Stage Update: {latest_stage}"
+            body = (
+                f"Symbol: {symbol.upper()}\n"
+                f"Current Stage: {latest_stage}\n"
+                f"Previous Stage: {previous_stage}\n"
+                f"Last Change Date: {formatted_date}\n\n"
+                "Visit dashboard for full chart view:\n"
+                f"http://localhost:5000/trendview/{symbol}"
+            )
+
+            # 🔹 Force-send for testing
+            print("📧 Forcing email send for test...")
+            send_email(subject, body)
+
+        except Exception as e:
+            print(f"⚠️ Notification skipped: {e}")
+        # ✅ Send only if stage changed recently (within last few days)
+        if isinstance(last_change_date, pd.Timestamp):
+            delta_days = (pd.Timestamp.now() - last_change_date).days
+            if delta_days <= 2:  # avoid daily spam; change threshold as needed
+                send_email(subject, body)
+    except Exception as e:
+        print(f"⚠️ Notification skipped: {e}")
 
     # --- Build JSON summary ---
     summary = {
