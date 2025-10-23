@@ -39,6 +39,7 @@ th{background:var(--accent);color:#fff}
 <h1>{{ symbol.upper() }} — Trend Analysis</h1>
 <div class="summary">
   <p><strong>Current Stage:</strong> {{ current_stage }}</p>
+  <p><strong>Previous Stage:</strong> {{ trend_data.previous_stage if trend_data.previous_stage else 'N/A' }}</p>
   <p><strong>Last Stage Change:</strong> {{ last_change_date }}</p>
 </div>
 <div id="daySelector" style="margin-bottom:15px;">

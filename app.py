@@ -277,9 +277,17 @@ def identify_trend(symbol):
     ]
     df["Stage"] = np.select(conditions, choices, default=None)
 
-    # --- Identify latest trend ---
-    latest_stage = df["Stage"].dropna().iloc[-1] if not df["Stage"].dropna().empty else "Unknown"
-    last_change_date = df.loc[df["Stage"].shift() != df["Stage"], "Date"].iloc[-1]
+    # --- Identify latest and previous stage ---
+    stage_changes = df.loc[df["Stage"].shift() != df["Stage"], ["Date", "Stage"]].dropna().reset_index(drop=True)
+
+    if not stage_changes.empty:
+       latest_stage = stage_changes["Stage"].iloc[-1]
+       last_change_date = stage_changes["Date"].iloc[-1]
+       previous_stage = stage_changes["Stage"].iloc[-2] if len(stage_changes) > 1 else "No previous stage in selected range"
+    else:
+       latest_stage = "Unknown"
+       last_change_date = "N/A"
+       previous_stage = "N/A"
 
     # --- Summarize trend durations ---
     stage_summary = (
@@ -336,6 +344,7 @@ def identify_trend(symbol):
     summary = {
         "symbol": symbol.upper(),
         "current_stage": latest_stage,
+        "previous_stage": previous_stage,
         "last_change_date": str(last_change_date.date()) if pd.notna(last_change_date) else "N/A",
         "stage_durations": stage_summary.to_dict(orient="records"),
     }
