@@ -36,30 +36,40 @@ from selenium import webdriver
 import sys
 
 def send_email(subject, body, to_addrs=None):
+    """Send email notifications via Gmail SMTP to multiple recipients."""
     import smtplib, ssl
-    sender_email = "deepan.antony@gmail.com"
-    password = "mohzxqmoeiisouxn"  # 16-char Google App Password
 
+    sender_email = "deepan.antony@gmail.com"
+    password = "mohzxqmoeiisouxn"  # Gmail App Password (16-char)
+
+    # ✅ Always include both recipients by default
     if to_addrs is None:
-        to_addrs = ["mike.bmails@gmail.com"]
+        to_addrs = [
+            "mike.bmails@gmail.com",
+            "janetfernando9@gmail.com"
+        ]
 
     message = f"Subject: {subject}\n\n{body}"
+
     try:
         with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-            server.set_debuglevel(1)  # enable verbose output
+            server.set_debuglevel(1)
             server.starttls(context=ssl.create_default_context())
             server.login(sender_email, password)
             server.sendmail(sender_email, to_addrs, message.encode("utf-8"))
-        print("✅ Email sent successfully.")
+
+        print(f"✅ Email sent successfully to: {', '.join(to_addrs)}")
+
     except Exception as e:
         print(f"❌ Email failed: {e}")
+
 
 # def send_email(subject, body, to_addrs=None):
 #     """Sends an email notification using Gmail SMTP."""
 #     sender_email = "deepan.antony@gmail.com"        # 🔹 your sender address
 #     password = "mohzxqmoeiisouxn"                   # 🔹 your app-password (not Gmail password!)
 #     if to_addrs is None:
-#         to_addrs = ["mike.bmails@gmail.com"]        # 🔹 default recipients
+#         to_addrs = ["mike.bmails@gmail.com","janetfernando9@gmail.com"]        # 🔹 default recipients
 
 #     smtp_server = "smtp.gmail.com"
 #     port = 587
@@ -477,6 +487,20 @@ def trendview(symbol):
         stage_durations=data.get("stage_durations", []),
         trend_data=json.dumps(data)
     )
+
+@app.route('/sendtestemail')
+def send_test_email():
+    """Manually trigger a test email to all recipients."""
+    subject = "📊 Test Notification — Flask Trend Analyzer"
+    body = (
+        "Hello,\n\n"
+        "This is a test notification from your Stock Trend Analyzer app.\n"
+        "If you're seeing this, email delivery is working for all configured recipients.\n\n"
+        "Regards,\n"
+        "Flask Trend Analyzer"
+    )
+    send_email(subject, body)
+    return "✅ Test email sent! Check both inboxes."
 
 if __name__ == '__main__':
     app.run(debug=True)
