@@ -3,6 +3,7 @@ import os
 import numpy as np
 import time
 import pickle
+import base64
 import pandas as pd
 import requests
 import glob
@@ -433,9 +434,9 @@ def identify_trend(symbol):
                 f"http://localhost:5000/trendview/{symbol}"
             )
 
-            # 🔹 Force-send for testing
-            print("📧 Forcing email send for test...")
-            send_email(subject, body)
+            # # 🔹 Force-send for testing
+            # print("📧 Forcing email send for test...")
+            # send_email(subject, body)
 
         except Exception as e:
             print(f"⚠️ Notification skipped: {e}")
@@ -459,11 +460,214 @@ def identify_trend(symbol):
 
     # --- Return both JSON + Image ---
     # Flask doesn’t support multiple body types directly, so return multipart or base64
-    import base64
     encoded_img = base64.b64encode(img.getvalue()).decode("utf-8")
     summary["chart_base64"] = f"data:image/png;base64,{encoded_img}"
 
     return jsonify(summary)
+
+@app.route('/dashboard/<string:symbol>')
+def dashboard(symbol):
+    """
+    Unified dashboard combining Trend View and Backtest View in two tabs.
+    Example: /dashboard/infy?days=180
+    """
+    days = request.args.get("days", "365")
+
+    trend_resp = requests.get(f"http://localhost:5000/identifytrend/{symbol}?days={days}")
+    backtest_resp = requests.get(f"http://localhost:5000/backtest/{symbol}?days={days}")
+
+    if trend_resp.status_code != 200 or backtest_resp.status_code != 200:
+        return f"<h3>❌ Failed to fetch data for {symbol}</h3>", 500
+
+    trend = trend_resp.json()
+    backtest = backtest_resp.json()
+
+    html = f"""
+    <html>
+    <head>
+      <title>{symbol.upper()} — Unified Dashboard</title>
+      <style>
+        body {{ font-family: Arial, sans-serif; background:#f7f8fa; margin:0; }}
+        .tabs {{ display:flex; background:#003366; }}
+        .tab {{
+          flex:1; text-align:center; padding:15px; cursor:pointer;
+          color:white; font-weight:bold; border-right:1px solid #004080;
+        }}
+        .tab:hover {{ background:#0055aa; }}
+        .tab.active {{ background:#007bff; }}
+        .content {{ padding:20px; }}
+        .hidden {{ display:none; }}
+        table {{ border-collapse:collapse; width:90%; margin-top:15px; background:white; }}
+        th, td {{ border:1px solid #ccc; padding:8px; text-align:center; }}
+        th {{ background:#e0ebff; }}
+        img {{ border-radius:10px; box-shadow:0 0 10px rgba(0,0,0,0.2); margin-top:15px; }}
+      </style>
+      <script>
+        function switchTab(tab) {{
+          document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+          document.querySelectorAll('.section').forEach(s=>s.classList.add('hidden'));
+          document.getElementById(tab+'Tab').classList.add('active');
+          document.getElementById(tab+'Section').classList.remove('hidden');
+        }}
+      </script>
+    </head>
+    <body onload="switchTab('trend')">
+      <div class="tabs">
+        <div id="trendTab" class="tab" onclick="switchTab('trend')">Trend View</div>
+        <div id="backtestTab" class="tab" onclick="switchTab('backtest')">Backtest</div>
+      </div>
+
+      <div class="content">
+        <!-- Trend Section -->
+        <div id="trendSection" class="section">
+          <h2>📈 Trend Analysis — {trend.get('symbol')}</h2>
+          <p><b>Current Stage:</b> {trend.get('current_stage')}<br>
+             <b>Previous Stage:</b> {trend.get('previous_stage')}<br>
+             <b>Last Change:</b> {trend.get('last_change_date')}<br>
+             <b>Eligibility:</b> {trend.get('eligibility_for_trade')}</p>
+          <img src="{trend.get('chart_base64')}" width="900px"/>
+        </div>
+
+        <!-- Backtest Section -->
+        <div id="backtestSection" class="section hidden">
+          <h2>💹 Backtest — {backtest.get('symbol')}</h2>
+          <p><b>Total Trades:</b> {backtest.get('total_trades')}<br>
+             <b>Win Rate:</b> {backtest.get('win_rate_percent')}%<br>
+             <b>Average Gain:</b> {backtest.get('avg_gain_percent')}%<br>
+             <b>Total Return:</b> {backtest.get('total_return_percent')}%</p>
+
+          <h3>Trade History</h3>
+          <table>
+            <tr><th>Buy Date</th><th>Buy Price</th><th>Sell Date</th><th>Sell Price</th><th>Gain %</th></tr>
+    """
+
+    trades = backtest.get("trades", [])
+    if trades:
+        for t in trades:
+            html += f"<tr><td>{t['buy_date']}</td><td>{t['buy_price']}</td><td>{t['sell_date']}</td><td>{t['sell_price']}</td><td>{t['gain_percent']}</td></tr>"
+    else:
+        html += "<tr><td colspan='5'>No completed trades</td></tr>"
+
+    html += f"""
+          </table>
+          <img src="{backtest.get('chart_base64')}" width="900px"/>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+    return html
+
+
+@app.route('/backtest/<string:symbol>')
+def backtest(symbol):
+    """Backtest Buy/Sell signals (DMA50 crossovers) and produce performance metrics."""
+    days = request.args.get("days", "365")
+
+    # --- Fetch chart data ---
+    r = requests.get(f'http://localhost:5000/nseid/{symbol}?days={days}')
+    if r.status_code != 200:
+        return jsonify({"error": f"Failed to fetch chart data for {symbol}"}), 500
+    data = r.json().get("chart_data", {})
+    datasets = data.get("datasets", [])
+    if not datasets:
+        return jsonify({"error": "No datasets found."}), 404
+
+    # --- Build DataFrame ---
+    price_data = next(d["values"] for d in datasets if d["label"] in ["Price on NSE", "Price on BSE"])
+    dma50_data = next(d["values"] for d in datasets if d["label"] == "50 DMA")
+    dma200_data = next(d["values"] for d in datasets if d["label"] == "200 DMA")
+
+    df = pd.DataFrame(price_data, columns=["Date", "Price"])
+    df["Date"] = pd.to_datetime(df["Date"])
+    df["Price"] = df["Price"].astype(float)
+    df["DMA50"] = [float(v[1]) for v in dma50_data]
+    df["DMA200"] = [float(v[1]) for v in dma200_data]
+
+    # --- Detect Buy/Sell Signals ---
+    df["prev_price"] = df["Price"].shift(1)
+    df["prev_dma50"] = df["DMA50"].shift(1)
+    df["buy_signal"] = (df["prev_price"] < df["prev_dma50"]) & (df["Price"] > df["DMA50"])
+    df["sell_signal"] = (df["prev_price"] > df["prev_dma50"]) & (df["Price"] < df["DMA50"])
+
+    buys = df.loc[df["buy_signal"], ["Date", "Price"]].reset_index(drop=True)
+    sells = df.loc[df["sell_signal"], ["Date", "Price"]].reset_index(drop=True)
+
+    # --- Pair Trades + Build Equity Curve ---
+    trades, equity_curve = [], []
+    balance = 1.0
+    for i in range(len(buys)):
+        buy_date, buy_price = buys.iloc[i]["Date"], buys.iloc[i]["Price"]
+        sell = sells[sells["Date"] > buy_date].head(1)
+        if sell.empty:
+            continue
+        sell_date, sell_price = sell.iloc[0]["Date"], sell.iloc[0]["Price"]
+        gain = ((sell_price - buy_price) / buy_price)
+        balance *= (1 + gain)
+        trades.append({
+            "buy_date": buy_date.strftime("%Y-%m-%d"),
+            "buy_price": round(buy_price, 2),
+            "sell_date": sell_date.strftime("%Y-%m-%d"),
+            "sell_price": round(sell_price, 2),
+            "gain_percent": round(gain * 100, 2)
+        })
+        equity_curve.append({"Date": sell_date, "Balance": balance})
+
+    # --- Performance Stats ---
+    total_buys, total_sells = len(buys), len(sells)
+    total_trades = len(trades)
+    win_trades = len([t for t in trades if t["gain_percent"] > 0])
+    avg_gain = np.mean([t["gain_percent"] for t in trades]) if trades else 0
+    total_return = (balance - 1) * 100 if trades else 0
+    win_rate = (win_trades / total_trades * 100) if total_trades else 0
+
+    # --- Stage info from identifytrend ---
+    stage_data = requests.get(f"http://localhost:5000/identifytrend/{symbol}?days={days}")
+    if stage_data.status_code == 200:
+        s = stage_data.json()
+        current_stage, previous_stage = s.get("current_stage", ""), s.get("previous_stage", "")
+        eligibility = s.get("eligibility_for_trade", "")
+        trend_chart = s.get("chart_base64", "")
+    else:
+        current_stage = previous_stage = eligibility = "N/A"
+        trend_chart = ""
+
+    # --- Plot Chart ---
+    fig, ax = plt.subplots(figsize=(14, 7))
+    ax.plot(df["Date"], df["Price"], color="blue", label="Price")
+    ax.plot(df["Date"], df["DMA50"], color="orange", linestyle="--", label="50 DMA")
+    ax.plot(df["Date"], df["DMA200"], color="red", linestyle="--", label="200 DMA")
+    ax.scatter(buys["Date"], buys["Price"], marker="^", color="green", s=100, label="Buy")
+    ax.scatter(sells["Date"], sells["Price"], marker="v", color="red", s=100, label="Sell")
+    ax.set_title(f"{symbol.upper()} — Backtest ({days} days)")
+    ax.legend(loc="upper left"); ax.grid(alpha=0.4)
+    if equity_curve:
+        eq = pd.DataFrame(equity_curve)
+        ax2 = ax.twinx()
+        ax2.plot(eq["Date"], eq["Balance"], color="purple", label="Equity", linewidth=2)
+        ax2.legend(loc="upper right"); ax2.set_ylabel("Equity (× start)")
+    plt.tight_layout()
+    img = BytesIO(); plt.savefig(img, format="png", dpi=150); plt.close(fig); img.seek(0)
+    encoded_img = base64.b64encode(img.getvalue()).decode("utf-8")
+
+    # --- Response JSON ---
+    return jsonify({
+        "symbol": symbol.upper(),
+        "total_buys": total_buys,
+        "total_sells": total_sells,
+        "total_trades": total_trades,
+        "win_rate_percent": round(win_rate, 2),
+        "avg_gain_percent": round(avg_gain, 2),
+        "total_return_percent": round(total_return, 2),
+        "current_stage": current_stage,
+        "previous_stage": previous_stage,
+        "eligibility_for_trade": eligibility,
+        "chart_base64": f"data:image/png;base64,{encoded_img}",
+        "trend_chart": trend_chart,
+        "trades": trades
+    })
+
+
 
 @app.route('/trendview/<string:symbol>')
 def trendview(symbol):
