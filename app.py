@@ -352,6 +352,12 @@ def identify_trend(symbol):
         latest_stage = "Unknown"
         last_change_date = "N/A"
         previous_stage = "Unknown"
+        # --- Determine trade eligibility ---
+    if latest_stage.startswith("Stage 2") and previous_stage.startswith("Stage 1"):
+        eligibility = "✅ Yes — In Uptrend after Accumulation"
+    else:
+        eligibility = "❌ No — Fails Stage Sequence Rule"
+
 
     # --- Summarize trend durations ---
     stage_summary = (
@@ -455,7 +461,9 @@ def identify_trend(symbol):
         "previous_stage": previous_stage,
         "last_change_date": formatted_date,
         "stage_durations": stage_summary.to_dict(orient="records"),
+        "eligibility_for_trade": eligibility,
     }
+    summary["eligibility_for_trade"] = eligibility
 
 
     # --- Return both JSON + Image ---
