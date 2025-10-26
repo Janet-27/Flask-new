@@ -476,8 +476,7 @@ def identify_trend(symbol):
 @app.route('/dashboard/<string:symbol>')
 def dashboard(symbol):
     """
-    Unified dashboard combining Trend View and Backtest View in two tabs.
-    Example: /dashboard/infy?days=180
+    Unified, styled dashboard for Trend + Backtest + Summary
     """
     days = request.args.get("days", "365")
 
@@ -490,25 +489,100 @@ def dashboard(symbol):
     trend = trend_resp.json()
     backtest = backtest_resp.json()
 
+    eligibility = trend.get("eligibility_for_trade", "")
+    badge_color = "green" if "✅" in eligibility else "red"
+
     html = f"""
     <html>
     <head>
-      <title>{symbol.upper()} — Unified Dashboard</title>
+      <title>{symbol.upper()} — Stock Analyzer Dashboard</title>
       <style>
-        body {{ font-family: Arial, sans-serif; background:#f7f8fa; margin:0; }}
-        .tabs {{ display:flex; background:#003366; }}
-        .tab {{
-          flex:1; text-align:center; padding:15px; cursor:pointer;
-          color:white; font-weight:bold; border-right:1px solid #004080;
+        body {{
+          font-family: 'Segoe UI', sans-serif;
+          background: #f3f6fb;
+          margin: 0;
         }}
-        .tab:hover {{ background:#0055aa; }}
-        .tab.active {{ background:#007bff; }}
-        .content {{ padding:20px; }}
-        .hidden {{ display:none; }}
-        table {{ border-collapse:collapse; width:90%; margin-top:15px; background:white; }}
-        th, td {{ border:1px solid #ccc; padding:8px; text-align:center; }}
-        th {{ background:#e0ebff; }}
-        img {{ border-radius:10px; box-shadow:0 0 10px rgba(0,0,0,0.2); margin-top:15px; }}
+        header {{
+          background: #004080;
+          color: white;
+          padding: 15px 25px;
+          font-size: 22px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }}
+        header button {{
+          background: #007bff;
+          color: white;
+          border: none;
+          padding: 8px 15px;
+          border-radius: 6px;
+          cursor: pointer;
+        }}
+        header button:hover {{ background: #005dc1; }}
+        .tabs {{
+          display: flex;
+          background: #003366;
+        }}
+        .tab {{
+          flex: 1;
+          text-align: center;
+          padding: 15px;
+          cursor: pointer;
+          color: white;
+          font-weight: bold;
+          transition: background 0.3s;
+        }}
+        .tab:hover {{ background: #0055aa; }}
+        .tab.active {{ background: #007bff; }}
+        .content {{ padding: 25px; }}
+        .hidden {{ display: none; }}
+        .card {{
+          background: white;
+          border-radius: 10px;
+          box-shadow: 0 0 8px rgba(0,0,0,0.1);
+          padding: 15px 20px;
+          margin-bottom: 20px;
+        }}
+        .metric-grid {{
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 15px;
+        }}
+        .metric {{
+          text-align: center;
+          padding: 15px;
+          border-radius: 10px;
+          color: white;
+          font-size: 18px;
+          font-weight: bold;
+        }}
+        .green {{ background: #28a745; }}
+        .red {{ background: #dc3545; }}
+        .blue {{ background: #007bff; }}
+        .orange {{ background: #fd7e14; }}
+        table {{
+          border-collapse: collapse;
+          width: 100%;
+          background: white;
+          border-radius: 10px;
+          overflow: hidden;
+        }}
+        th, td {{
+          border: 1px solid #ddd;
+          padding: 8px;
+          text-align: center;
+        }}
+        th {{ background: #e9f0ff; }}
+        tr:nth-child(even) {{ background: #f9f9f9; }}
+        tr.profit td {{ color: #28a745; font-weight: bold; }}
+        tr.loss td {{ color: #dc3545; }}
+        img {{
+          border-radius: 10px;
+          box-shadow: 0 0 10px rgba(0,0,0,0.2);
+          margin-top: 20px;
+          max-width: 100%;
+        }}
       </style>
       <script>
         function switchTab(tab) {{
@@ -517,54 +591,86 @@ def dashboard(symbol):
           document.getElementById(tab+'Tab').classList.add('active');
           document.getElementById(tab+'Section').classList.remove('hidden');
         }}
+        function reloadPage() {{
+          location.reload();
+        }}
       </script>
     </head>
     <body onload="switchTab('trend')">
+      <header>
+        <div><b>{symbol.upper()}</b> — {days}-day Dashboard</div>
+        <button onclick="reloadPage()">⟳ Refresh</button>
+      </header>
+
       <div class="tabs">
-        <div id="trendTab" class="tab" onclick="switchTab('trend')">Trend View</div>
-        <div id="backtestTab" class="tab" onclick="switchTab('backtest')">Backtest</div>
+        <div id="trendTab" class="tab" onclick="switchTab('trend')">📈 Trend</div>
+        <div id="backtestTab" class="tab" onclick="switchTab('backtest')">💹 Backtest</div>
+        <div id="summaryTab" class="tab" onclick="switchTab('summary')">📊 Summary</div>
       </div>
 
       <div class="content">
         <!-- Trend Section -->
         <div id="trendSection" class="section">
-          <h2>📈 Trend Analysis — {trend.get('symbol')}</h2>
-          <p><b>Current Stage:</b> {trend.get('current_stage')}<br>
-             <b>Previous Stage:</b> {trend.get('previous_stage')}<br>
-             <b>Last Change:</b> {trend.get('last_change_date')}<br>
-             <b>Eligibility:</b> {trend.get('eligibility_for_trade')}</p>
-          <img src="{trend.get('chart_base64')}" width="900px"/>
+          <div class="card">
+            <h2>Trend Analysis — {trend.get('symbol')}</h2>
+            <p><b>Current Stage:</b> {trend.get('current_stage')}<br>
+               <b>Previous Stage:</b> {trend.get('previous_stage')}<br>
+               <b>Last Change:</b> {trend.get('last_change_date')}<br>
+               <b>Eligibility:</b> <span style="color:{badge_color}; font-weight:bold;">{eligibility}</span></p>
+            <img src="{trend.get('chart_base64')}" />
+          </div>
         </div>
 
         <!-- Backtest Section -->
         <div id="backtestSection" class="section hidden">
-          <h2>💹 Backtest — {backtest.get('symbol')}</h2>
-          <p><b>Total Trades:</b> {backtest.get('total_trades')}<br>
-             <b>Win Rate:</b> {backtest.get('win_rate_percent')}%<br>
-             <b>Average Gain:</b> {backtest.get('avg_gain_percent')}%<br>
-             <b>Total Return:</b> {backtest.get('total_return_percent')}%</p>
-
-          <h3>Trade History</h3>
-          <table>
-            <tr><th>Buy Date</th><th>Buy Price</th><th>Sell Date</th><th>Sell Price</th><th>Gain %</th></tr>
+          <div class="card">
+            <h2>Backtest Results — {backtest.get('symbol')}</h2>
+            <div class="metric-grid">
+              <div class="metric blue">Total Trades<br>{backtest.get('total_trades')}</div>
+              <div class="metric green">Win Rate<br>{backtest.get('win_rate_percent')}%</div>
+              <div class="metric orange">Avg Gain<br>{backtest.get('avg_gain_percent')}%</div>
+              <div class="metric red">Total Return<br>{backtest.get('total_return_percent')}%</div>
+            </div>
+            <h3 style="margin-top:25px;">Trade History</h3>
+            <table>
+              <tr><th>Buy Date</th><th>Buy Price</th><th>Sell Date</th><th>Sell Price</th><th>Gain %</th></tr>
     """
 
+    # ✅ Build table rows
     trades = backtest.get("trades", [])
     if trades:
         for t in trades:
-            html += f"<tr><td>{t['buy_date']}</td><td>{t['buy_price']}</td><td>{t['sell_date']}</td><td>{t['sell_price']}</td><td>{t['gain_percent']}</td></tr>"
+            css_class = "profit" if t['gain_percent'] > 0 else "loss"
+            html += f"<tr class='{css_class}'><td>{t['buy_date']}</td><td>{t['buy_price']}</td><td>{t['sell_date']}</td><td>{t['sell_price']}</td><td>{t['gain_percent']}</td></tr>"
     else:
         html += "<tr><td colspan='5'>No completed trades</td></tr>"
 
     html += f"""
-          </table>
-          <img src="{backtest.get('chart_base64')}" width="900px"/>
+            </table>
+            <img src="{backtest.get('chart_base64')}" />
+          </div>
+        </div>
+
+        <!-- Summary Section -->
+        <div id="summarySection" class="section hidden">
+          <div class="card">
+            <h2>Quick Summary</h2>
+            <p><b>Symbol:</b> {symbol.upper()}<br>
+               <b>Days:</b> {days}<br>
+               <b>Stage:</b> {trend.get('current_stage')}<br>
+               <b>Eligibility:</b> {eligibility}<br>
+               <b>Total Trades:</b> {backtest.get('total_trades')}<br>
+               <b>Win Rate:</b> {backtest.get('win_rate_percent')}%<br>
+               <b>Total Return:</b> {backtest.get('total_return_percent')}%</p>
+            <img src="{backtest.get('trend_chart')}" />
+          </div>
         </div>
       </div>
     </body>
     </html>
     """
     return html
+
 
 
 @app.route('/backtest/<string:symbol>')
