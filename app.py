@@ -193,7 +193,7 @@ def fetch_chart_data(symbol):
 @app.route('/chart/<string:symbol>')
 def chart(symbol):
     """Renders an annotated chart with Buy/Sell markers based on DMA crossovers."""
-    r = requests.get(f'http://localhost:5000/nseid/{symbol}')
+    r = requests.get(f'http://localhost:5001/nseid/{symbol}')
     if r.status_code != 200:
         return jsonify({"error": f"Failed to fetch chart data for {symbol}"}), 500
     
@@ -284,9 +284,9 @@ def identify_trend(symbol):
     Returns both a color-coded chart and a textual summary (JSON).
     """
     # --- Fetch chart data from cache or Screener API ---
-    # r = requests.get(f'http://localhost:5000/nseid/{symbol}')
+    # r = requests.get(f'http://localhost:5001/nseid/{symbol}')
     days = request.args.get("days", "365")
-    r = requests.get(f'http://localhost:5000/nseid/{symbol}?days={days}')
+    r = requests.get(f'http://localhost:5001/nseid/{symbol}?days={days}')
     if r.status_code != 200:
         return jsonify({"error": f"Failed to fetch chart data for {symbol}"}), 500
 
@@ -419,7 +419,7 @@ def identify_trend(symbol):
             f"Previous Stage: {previous_stage}\n"
             f"Last Change Date: {formatted_date}\n\n"
             "Visit dashboard for full chart view:\n"
-            f"http://localhost:5000/trendview/{symbol}"
+            f"http://localhost:5001/trendview/{symbol}"
         )
         print(f"📬 Checking if email should be sent for {symbol}...")
         try:
@@ -430,7 +430,7 @@ def identify_trend(symbol):
                 f"Previous Stage: {previous_stage}\n"
                 f"Last Change Date: {formatted_date}\n\n"
                 "Visit dashboard for full chart view:\n"
-                f"http://localhost:5000/trendview/{symbol}"
+                f"http://localhost:5001/trendview/{symbol}"
             )
 
             # 🔹 Force-send for testing
@@ -471,9 +471,9 @@ def trendview(symbol):
     Browser-friendly HTML dashboard for trend visualization.
     Fetches JSON from /identifytrend/<symbol> and renders an HTML summary.
     """
-    # r = requests.get(f'http://localhost:5000/identifytrend/{symbol}')
+    # r = requests.get(f'http://localhost:5001/identifytrend/{symbol}')
     days = request.args.get("days", "365")
-    r = requests.get(f'http://localhost:5000/identifytrend/{symbol}?days={days}')
+    r = requests.get(f'http://localhost:5001/identifytrend/{symbol}?days={days}')
     if r.status_code != 200:
         return f"<h2>Failed to fetch trend data for {symbol}</h2>", 500
 
@@ -514,7 +514,7 @@ def scan_nifty50():
         try:
             print(f"🔍 Checking {symbol}...")
             days = request.args.get("days", "365")
-            r = requests.get(f"http://localhost:5000/identifytrend/{symbol}?days={days}", timeout=60)
+            r = requests.get(f"http://localhost:5001/identifytrend/{symbol}?days={days}", timeout=60)
             if r.status_code != 200:
                 print(f"⚠️ Skipped {symbol} — HTTP {r.status_code}")
                 continue
@@ -553,7 +553,7 @@ def scan_nifty50():
                         f"Current Stage: {current_stage}\n"
                         f"Previous Stage: {previous_stage}\n"
                         f"Last Change Date: {last_change_date}\n\n"
-                        f"View chart:\nhttp://localhost:5000/trendview/{symbol}"
+                        f"View chart:\nhttp://localhost:5001/trendview/{symbol}"
                     )
                     send_email(subject, body)
                 else:
@@ -570,8 +570,73 @@ def scan_nifty50():
     return jsonify(summary)
 
 
+@app.route('/dashboard/nifty50')
+def dashboard_nifty50():
+    """
+    Dashboard UI for NIFTY-50 scanning.
+    Loads data from /scan/nifty50, filters eligible candidates,
+    and renders the HTML table including eligible list.
+    """
+
+    days = request.args.get("days", "365")
+
+    try:
+        # Fetch full scan results
+        scan_url = f"http://localhost:5001/scan/nifty50?days={days}"
+        print(f"📡 Fetching scan data → {scan_url}")
+
+        r = requests.get(scan_url, timeout=180)
+
+        if r.status_code != 200:
+            return render_template(
+                "nifty_dashboard.html",
+                scan=None,
+                eligible=[],
+                error=f"Scan failed with HTTP {r.status_code}",
+                days=days
+            )
+
+        scan_data = r.json()
+
+    except Exception as e:
+        return render_template(
+            "nifty_dashboard.html",
+            scan=None,
+            eligible=[],
+            error=f"Unexpected error: {e}",
+            days=days
+        )
+
+    # ----------------------------
+    # FILTER ELIGIBLE CANDIDATES
+    # ----------------------------
+
+    eligible = []
+    for stock in scan_data.get("details", []):
+        curr = (stock.get("current_stage") or "").strip()
+        prev = (stock.get("previous_stage") or "").strip()
+
+        if curr == "Stage 2 - Uptrend" and prev == "Stage 1 - Accumulation":
+            eligible.append(stock["symbol"])
+
+    # Add eligible list to the scan data (optional)
+    scan_data["eligible"] = eligible
+    scan_data["eligible_count"] = len(eligible)
+
+    # ----------------------------
+    # RENDER DASHBOARD WITH ELIGIBLE LIST
+    # ----------------------------
+
+    return render_template(
+        "nifty_dashboard.html",
+        scan=scan_data,
+        eligible=eligible,
+        error=None,
+        days=days
+    )
+
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5001, debug=True)
 
 
