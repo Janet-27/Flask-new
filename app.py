@@ -13,6 +13,7 @@ import openpyxl
 from io import BytesIO
 import matplotlib.pyplot as plt
 import matplotlib
+import smtplib, ssl
 matplotlib.use('Agg')  # Use non-interactive backend for Flask
 from flask import Response, jsonify, render_template
 
@@ -33,6 +34,57 @@ from cache import cache_data, get_cached_data
 
 from selenium import webdriver
 import sys
+
+def send_email(subject, body, to_addrs=None):
+    """Send email notifications via Gmail SMTP to multiple recipients."""
+    import smtplib, ssl
+
+    sender_email = "deepan.antony@gmail.com"
+    password = "mohzxqmoeiisouxn"  # Gmail App Password (16-char)
+
+    # ✅ Always include both recipients by default
+    if to_addrs is None:
+        to_addrs = [
+            "mike.bmails@gmail.com",
+            "janetfernando9@gmail.com"
+        ]
+
+    message = f"Subject: {subject}\n\n{body}"
+
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+            server.set_debuglevel(1)
+            server.starttls(context=ssl.create_default_context())
+            server.login(sender_email, password)
+            server.sendmail(sender_email, to_addrs, message.encode("utf-8"))
+
+        print(f"✅ Email sent successfully to: {', '.join(to_addrs)}")
+
+    except Exception as e:
+        print(f"❌ Email failed: {e}")
+
+
+# def send_email(subject, body, to_addrs=None):
+#     """Sends an email notification using Gmail SMTP."""
+#     sender_email = "deepan.antony@gmail.com"        # 🔹 your sender address
+#     password = "mohzxqmoeiisouxn"                   # 🔹 your app-password (not Gmail password!)
+#     if to_addrs is None:
+#         to_addrs = ["mike.bmails@gmail.com","janetfernando9@gmail.com"]        # 🔹 default recipients
+
+#     smtp_server = "smtp.gmail.com"
+#     port = 587
+#     context = ssl.create_default_context()
+
+#     message = f"Subject: {subject}\n\n{body}"
+#     try:
+#         with smtplib.SMTP(smtp_server, port) as server:
+#             server.starttls(context=context)
+#             server.login(sender_email, password)
+#             server.sendmail(sender_email, to_addrs, message.encode("utf-8"))
+#         print(f"📧 Email sent successfully to {to_addrs}")
+#     except Exception as e:
+#         print(f"⚠️ Email failed: {e}")
+
 app = Flask(__name__)
 
 @app.route('/')
@@ -123,7 +175,10 @@ def fetch_chart_data(symbol):
         m = re.search('quarter/([A-Za-z_0-9.-]+).*', company_url)
         if m:
             chart_id = m.group(1)
-            r = requests.get(f"https://www.screener.in/api/company/{chart_id}/chart/?q=Price-DMA50-DMA200-Volume&days=180&consolidated=true")
+            # r = requests.get(f"https://www.screener.in/api/company/{chart_id}/chart/?q=Price-DMA50-DMA200-Volume&days=180&consolidated=true")
+            days = request.args.get("days", "365")
+            url = f"https://www.screener.in/api/company/{chart_id}/chart/?q=Price-DMA50-DMA200-Volume&days={days}&consolidated=true"
+            r = requests.get(url)
             chart_data = r.json()
 
             result = {"symbol": symbol, "chart_id": chart_id, "chart_data": chart_data}
@@ -138,7 +193,7 @@ def fetch_chart_data(symbol):
 @app.route('/chart/<string:symbol>')
 def chart(symbol):
     """Renders an annotated chart with Buy/Sell markers based on DMA crossovers."""
-    r = requests.get(f'http://localhost:5000/nseid/{symbol}')
+    r = requests.get(f'http://localhost:5001/nseid/{symbol}')
     if r.status_code != 200:
         return jsonify({"error": f"Failed to fetch chart data for {symbol}"}), 500
     
@@ -229,7 +284,9 @@ def identify_trend(symbol):
     Returns both a color-coded chart and a textual summary (JSON).
     """
     # --- Fetch chart data from cache or Screener API ---
-    r = requests.get(f'http://localhost:5000/nseid/{symbol}')
+    # r = requests.get(f'http://localhost:5001/nseid/{symbol}')
+    days = request.args.get("days", "365")
+    r = requests.get(f'http://localhost:5001/nseid/{symbol}?days={days}')
     if r.status_code != 200:
         return jsonify({"error": f"Failed to fetch chart data for {symbol}"}), 500
 
@@ -272,9 +329,28 @@ def identify_trend(symbol):
     ]
     df["Stage"] = np.select(conditions, choices, default=None)
 
-    # --- Identify latest trend ---
-    latest_stage = df["Stage"].dropna().iloc[-1] if not df["Stage"].dropna().empty else "Unknown"
-    last_change_date = df.loc[df["Stage"].shift() != df["Stage"], "Date"].iloc[-1]
+    # --- Identify latest and previous stage ---
+    stage_changes = (
+        df.loc[df["Stage"].shift() != df["Stage"], ["Date", "Stage"]]
+        .dropna()
+        .reset_index(drop=True)
+    )
+
+    if not stage_changes.empty:
+        latest_stage = stage_changes["Stage"].iloc[-1]
+        last_change_date = stage_changes["Date"].iloc[-1]
+
+        # 🩵 FIX: Make sure we have a fallback if only one stage exists
+        if len(stage_changes) > 1:
+            previous_stage = stage_changes["Stage"].iloc[-2]
+        else:
+            # fallback to earliest available stage if only one stage detected
+            first_stage = df["Stage"].dropna().iloc[0] if not df["Stage"].dropna().empty else "Unknown"
+            previous_stage = first_stage if first_stage != latest_stage else "No previous stage in selected range"
+    else:
+        latest_stage = "Unknown"
+        last_change_date = "N/A"
+        previous_stage = "Unknown"
 
     # --- Summarize trend durations ---
     stage_summary = (
@@ -327,13 +403,59 @@ def identify_trend(symbol):
     plt.close(fig)
     img.seek(0)
 
+    # --- Format last change date ---
+    try:
+        formatted_date = pd.to_datetime(last_change_date).strftime("%Y - %b - %d")
+    except Exception:
+        formatted_date = "N/A"
+
+
+    # --- Send email if new stage is detected ---
+    try:
+        subject = f"{symbol.upper()} Stage Update: {latest_stage}"
+        body = (
+            f"Symbol: {symbol.upper()}\n"
+            f"Current Stage: {latest_stage}\n"
+            f"Previous Stage: {previous_stage}\n"
+            f"Last Change Date: {formatted_date}\n\n"
+            "Visit dashboard for full chart view:\n"
+            f"http://localhost:5001/trendview/{symbol}"
+        )
+        print(f"📬 Checking if email should be sent for {symbol}...")
+        try:
+            subject = f"{symbol.upper()} Stage Update: {latest_stage}"
+            body = (
+                f"Symbol: {symbol.upper()}\n"
+                f"Current Stage: {latest_stage}\n"
+                f"Previous Stage: {previous_stage}\n"
+                f"Last Change Date: {formatted_date}\n\n"
+                "Visit dashboard for full chart view:\n"
+                f"http://localhost:5001/trendview/{symbol}"
+            )
+
+            # 🔹 Force-send for testing
+            print("📧 Forcing email send for test...")
+            send_email(subject, body)
+
+        except Exception as e:
+            print(f"⚠️ Notification skipped: {e}")
+        # ✅ Send only if stage changed recently (within last few days)
+        if isinstance(last_change_date, pd.Timestamp):
+            delta_days = (pd.Timestamp.now() - last_change_date).days
+            if delta_days <= 2:  # avoid daily spam; change threshold as needed
+                send_email(subject, body)
+    except Exception as e:
+        print(f"⚠️ Notification skipped: {e}")
+
     # --- Build JSON summary ---
     summary = {
         "symbol": symbol.upper(),
         "current_stage": latest_stage,
-        "last_change_date": str(last_change_date.date()) if pd.notna(last_change_date) else "N/A",
+        "previous_stage": previous_stage,
+        "last_change_date": formatted_date,
         "stage_durations": stage_summary.to_dict(orient="records"),
     }
+
 
     # --- Return both JSON + Image ---
     # Flask doesn’t support multiple body types directly, so return multipart or base64
@@ -349,7 +471,9 @@ def trendview(symbol):
     Browser-friendly HTML dashboard for trend visualization.
     Fetches JSON from /identifytrend/<symbol> and renders an HTML summary.
     """
-    r = requests.get(f'http://localhost:5000/identifytrend/{symbol}')
+    # r = requests.get(f'http://localhost:5001/identifytrend/{symbol}')
+    days = request.args.get("days", "365")
+    r = requests.get(f'http://localhost:5001/identifytrend/{symbol}?days={days}')
     if r.status_code != 200:
         return f"<h2>Failed to fetch trend data for {symbol}</h2>", 500
 
@@ -358,12 +482,161 @@ def trendview(symbol):
         "trend_view.html",
         symbol=data.get("symbol"),
         current_stage=data.get("current_stage"),
+        previous_stage=data.get("previous_stage"),
         last_change_date=data.get("last_change_date"),
         stage_durations=data.get("stage_durations", []),
-        chart_base64=data.get("chart_base64")
+        trend_data=json.dumps(data)
     )
 
+@app.route('/scan/nifty50')
+def scan_nifty50():
+    """
+    Scan NIFTY-50 and send notifications ONLY when:
+      (1) current_stage == 'Stage 2 - Uptrend'
+      (2) previous_stage in ['Stage 1 - Accumulation', 'Stage 3 - Distribution']
+      (3) last_change_date is recent (e.g., within last 3 days)
+    """
+    nifty_symbols = [
+        "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","HINDUNILVR","ITC","BHARTIARTL","SBIN","BAJFINANCE",
+        "KOTAKBANK","LT","HCLTECH","ASIANPAINT","AXISBANK","MARUTI","SUNPHARMA","DMART","WIPRO","ULTRACEMCO",
+        "TITAN","NTPC","POWERGRID","ADANIGREEN","ADANIENT","ONGC","TATAMOTORS","COALINDIA","NESTLEIND","TECHM",
+        "HDFCLIFE","BAJAJFINSV","GRASIM","JSWSTEEL","TATASTEEL","SBILIFE","DRREDDY","CIPLA","BPCL","HEROMOTOCO",
+        "BRITANNIA","BAJAJ-AUTO","INDUSINDBK","EICHERMOT","UPL","HINDALCO","DIVISLAB","SHREECEM","TATACONSUM",
+        "APOLLOHOSP","COFORGE"
+    ]
+
+    VALID_PREV = {"Stage 1 - Accumulation", "Stage 3 - Distribution"}
+    results, triggered = [], []
+
+    def _clean(x): return (x or "").strip()
+
+    for symbol in nifty_symbols:
+        try:
+            print(f"🔍 Checking {symbol}...")
+            days = request.args.get("days", "365")
+            r = requests.get(f"http://localhost:5001/identifytrend/{symbol}?days={days}", timeout=60)
+            if r.status_code != 200:
+                print(f"⚠️ Skipped {symbol} — HTTP {r.status_code}")
+                continue
+
+            data = r.json()
+            current_stage = _clean(data.get("current_stage"))
+            previous_stage = _clean(data.get("previous_stage"))
+            last_change_date = _clean(data.get("last_change_date"))
+
+            results.append({
+                "symbol": symbol,
+                "current_stage": current_stage,
+                "previous_stage": previous_stage,
+                "last_change_date": last_change_date,
+            })
+
+            # ✅ Core condition
+            if current_stage == "Stage 2 - Uptrend" and previous_stage in VALID_PREV:
+                # ✅ Optional: filter only recent transitions
+                try:
+                    last_dt = pd.to_datetime(last_change_date.split("-")[1:], format="%b %d")  # rough parse
+                except Exception:
+                    last_dt = pd.to_datetime(last_change_date, errors="coerce")
+                if pd.notnull(last_dt):
+                    delta_days = (pd.Timestamp.now() - last_dt).days
+                else:
+                    delta_days = 999
+
+                if delta_days <= 3:  # send only if recent change (≤ 3 days)
+                    print(f"🚀 ALERT: {symbol} moved from {previous_stage} → Uptrend ({last_change_date})")
+                    triggered.append(symbol)
+
+                    subject = f"{symbol} entered Stage 2 - Uptrend 📈"
+                    body = (
+                        f"Symbol: {symbol}\n"
+                        f"Current Stage: {current_stage}\n"
+                        f"Previous Stage: {previous_stage}\n"
+                        f"Last Change Date: {last_change_date}\n\n"
+                        f"View chart:\nhttp://localhost:5001/trendview/{symbol}"
+                    )
+                    send_email(subject, body)
+                else:
+                    print(f"⏩ {symbol} Uptrend is old ({delta_days} days ago), skipping alert")
+
+        except Exception as e:
+            print(f"❌ Error scanning {symbol}: {e}")
+
+    summary = {
+        "total_scanned": len(nifty_symbols),
+        "triggered_alerts": triggered,
+        "detailed": results
+    }
+    return jsonify(summary)
+
+
+@app.route('/dashboard/nifty50')
+def dashboard_nifty50():
+    """
+    Dashboard UI for NIFTY-50 scanning.
+    Loads data from /scan/nifty50, filters eligible candidates,
+    and renders the HTML table including eligible list.
+    """
+
+    days = request.args.get("days", "365")
+
+    try:
+        # Fetch full scan results
+        scan_url = f"http://localhost:5001/scan/nifty50?days={days}"
+        print(f"📡 Fetching scan data → {scan_url}")
+
+        r = requests.get(scan_url, timeout=180)
+
+        if r.status_code != 200:
+            return render_template(
+                "nifty_dashboard.html",
+                scan=None,
+                eligible=[],
+                error=f"Scan failed with HTTP {r.status_code}",
+                days=days
+            )
+
+        scan_data = r.json()
+
+    except Exception as e:
+        return render_template(
+            "nifty_dashboard.html",
+            scan=None,
+            eligible=[],
+            error=f"Unexpected error: {e}",
+            days=days
+        )
+
+    # ----------------------------
+    # FILTER ELIGIBLE CANDIDATES
+    # ----------------------------
+
+    eligible = []
+    for stock in scan_data.get("details", []):
+        curr = (stock.get("current_stage") or "").strip()
+        prev = (stock.get("previous_stage") or "").strip()
+
+        if curr == "Stage 2 - Uptrend" and prev == "Stage 1 - Accumulation":
+            eligible.append(stock["symbol"])
+
+    # Add eligible list to the scan data (optional)
+    scan_data["eligible"] = eligible
+    scan_data["eligible_count"] = len(eligible)
+
+    # ----------------------------
+    # RENDER DASHBOARD WITH ELIGIBLE LIST
+    # ----------------------------
+
+    return render_template(
+        "nifty_dashboard.html",
+        scan=scan_data,
+        eligible=eligible,
+        error=None,
+        days=days
+    )
+
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5001, debug=True)
 
 

@@ -9,19 +9,26 @@ try:
 except redis.ConnectionError as e:
     print(f"❌ Redis connection failed: {e}")
 
-def cache_data(key, data, expiry=86400):
-    """Caches data in Redis with a 24-hour expiry."""
-    try:
-        cache.set(key, json.dumps(data))
-        cache.expire(key, expiry)
-    except Exception as e:
-        print(f"❌ Error caching data: {e}")
+def cache_data(key, value, expire=3600):
+    print(f"⚠️ Skipping Redis cache for {key}")
+    return None
 
 def get_cached_data(key):
-    """Retrieves data from Redis cache."""
-    try:
-        data = cache.get(key)
-        return json.loads(data) if data else None
-    except Exception as e:
-        print(f"❌ Error retrieving cache data: {e}")
-        return None
+    print(f"⚠️ Skipping Redis fetch for {key}")
+    return None
+# def cache_data(key, data, expiry=86400):
+#     """Caches data in Redis with a 24-hour expiry."""
+#     try:
+#         cache.set(key, json.dumps(data))
+#         cache.expire(key, expiry)
+#     except Exception as e:
+#         print(f"❌ Error caching data: {e}")
+
+# def get_cached_data(key):
+#     """Retrieves data from Redis cache."""
+#     try:
+#         data = cache.get(key)
+#         return json.loads(data) if data else None
+#     except Exception as e:
+#         print(f"❌ Error retrieving cache data: {e}")
+#         return None
