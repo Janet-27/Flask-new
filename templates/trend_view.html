@@ -1,91 +1,215 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>{{ symbol.upper() }} — Trend Analysis</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f8f9fa;
-            margin: 40px;
-        }
-        h1 { color: #333; }
-        .summary {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            margin-bottom: 30px;
-        }
-        .summary p {
-            margin: 8px 0;
-            font-size: 16px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            background: white;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        th, td {
-            padding: 10px;
-            border-bottom: 1px solid #e0e0e0;
-            text-align: center;
-        }
-        th {
-            background: #007BFF;
-            color: white;
-        }
-        tr:hover {
-            background: #f1f7ff;
-        }
-        img {
-            width: 100%;
-            margin-top: 20px;
-            border-radius: 8px;
-        }
-        .stage {
-            font-weight: bold;
-            font-size: 18px;
-        }
-        .Stage1 { color: #28a745; }  /* Accumulation */
-        .Stage2 { color: #007bff; }  /* Uptrend */
-        .Stage3 { color: #ffcc00; }  /* Distribution */
-        .Stage4 { color: #dc3545; }  /* Decline */
-    </style>
+<meta charset="UTF-8">
+<title>{{ symbol.upper() }} — Trend Dashboard</title>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<style>
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  color: #fff;
+  margin-left: 8px;
+}
+
+.badge-current { background-color: #007bff; }  /* blue */
+.badge-previous { background-color: #6c757d; } /* grey */
+:root {
+  --bg:#f8f9fa;--text:#222;--card:#fff;--accent:#007BFF;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#121212;--text:#eee;--card:#1e1e1e;--accent:#4da3ff;}
+}
+body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;margin:40px;}
+h1{margin-bottom:.2em}
+.summary{background:var(--card);padding:20px;border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,.2);margin-bottom:20px;}
+#controls{margin:15px 0;display:flex;flex-wrap:wrap;gap:10px}
+button{
+  background:var(--accent);color:#fff;border:none;border-radius:6px;
+  padding:8px 14px;cursor:pointer;font-size:14px;
+  transition:.2s;user-select:none
+}
+button:hover{opacity:.8}
+button.inactive{background:#6c757d}
+table{width:100%;border-collapse:collapse;background:var(--card);border-radius:8px;overflow:hidden;margin:20px 0 30px}
+th,td{padding:10px;text-align:center;border-bottom:1px solid rgba(150,150,150,.2)}
+th{background:var(--accent);color:#fff}
+#chart,#timeline{width:100%;height:600px;margin-bottom:50px}
+#timeline{height:250px}
+@media (prefers-color-scheme: dark){
+  .modebar-btn,
+  .modebar-group .btn,
+  .plotly .modebar-group {
+    filter: brightness(1.4);
+  }
+</style>
 </head>
 <body>
-    <h1>{{ symbol.upper() }} — Trend Analysis</h1>
+<h1>{{ symbol.upper() }} — Trend Analysis</h1>
+<div class="summary">
+  <p><strong>Current Stage:</strong> 
+    {{ current_stage }} 
+    <span class="badge badge-current">Current</span>
+  </p>
+  <p><strong>Previous Stage:</strong> 
+    {{ previous_stage }} 
+    <span class="badge badge-previous">Previous</span>
+  </p>
+  <p><strong>Last Stage Change:</strong> {{ last_change_date }}</p>
+</div>
+<div id="daySelector" style="margin-bottom:15px;">
+  <strong>Range:</strong>
+  <button onclick="changeDays(30)">30D</button>
+  <button onclick="changeDays(90)">90D</button>
+  <button onclick="changeDays(180)">180D</button>
+  <button onclick="changeDays(365)">1Y</button>
+</div>
 
-    <div class="summary">
-        <p><strong>Current Stage:</strong> 
-            <span class="stage Stage{{ current_stage[6] if current_stage else '' }}">
-                {{ current_stage }}
-            </span>
-        </p>
-        <p><strong>Last Stage Change:</strong> {{ last_change_date }}</p>
-    </div>
+<script>
+function changeDays(days) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('days', days);
+  window.location.href = url.toString();
+}
+</script>
+<div id="controls">
+  <button id="togglePrice">Price</button>
+  <button id="toggle50">50 DMA</button>
+  <button id="toggle200">200 DMA</button>
+  <button id="toggleBuySell">Buy/Sell</button>
+  <button id="toggleCrosses">Crosses</button>
+  <button id="toggleStages">Stage Shading</button>
+</div>
 
-    <h2>Stage History</h2>
-    <table>
-        <tr>
-            <th>Stage</th>
-            <th>Start</th>
-            <th>End</th>
-            <th>Duration (days)</th>
-        </tr>
-        {% for s in stage_durations %}
-        <tr>
-            <td>{{ s.Stage }}</td>
-            <td>{{ s.Start }}</td>
-            <td>{{ s.End }}</td>
-            <td>{{ s.Duration_days }}</td>
-        </tr>
-        {% endfor %}
-    </table>
+<h2>Stage History</h2>
+<table>
+  <tr><th>Stage</th><th>Start</th><th>End</th><th>Duration (days)</th></tr>
+  {% for s in stage_durations %}
+  <tr><td>{{ s.Stage }}</td><td>{{ s.Start }}</td><td>{{ s.End }}</td><td>{{ s.Duration_days }}</td></tr>
+  {% endfor %}
+</table>
 
-    <img src="{{ chart_base64 }}" alt="Trend Chart">
+<div id="chart"></div>
+<h2>Stage Transition Timeline</h2>
+<div id="timeline"></div>
+
+<script>
+const trendData={{trend_data|safe}};
+async function loadData(){
+  const urlParams = new URLSearchParams(window.location.search);
+  const days = urlParams.get('days') || '365';
+  const res = await fetch(`/nseid/${trendData.symbol.toLowerCase()}?days=${days}`);
+  const json=await res.json();
+  const ds=json.chart_data.datasets;
+
+  const price=ds.find(d=>d.label.includes("Price")).values.map(v=>({x:v[0],y:+v[1]}));
+  const dma50=ds.find(d=>d.label.includes("50 DMA")).values.map(v=>({x:v[0],y:+v[1]}));
+  const dma200=ds.find(d=>d.label.includes("200 DMA")).values.map(v=>({x:v[0],y:+v[1]}));
+
+  const buy=[],sell=[],golden=[],death=[];
+  for(let i=1;i<price.length;i++){
+    const p0=price[i-1].y,p1=price[i].y, d50_0=dma50[i-1].y,d50_1=dma50[i].y,d200_0=dma200[i-1].y,d200_1=dma200[i].y;
+    if(p0<d50_0&&p1>d50_1)buy.push(price[i]);
+    if(p0>d50_0&&p1<d50_1)sell.push(price[i]);
+    if(d50_0<d200_0&&d50_1>d200_1)golden.push(dma50[i]);
+    if(d50_0>d200_0&&d50_1<d200_1)death.push(dma50[i]);
+  }
+
+  const stageColors={
+    "Stage 1 - Accumulation":"rgba(40,167,69,0.2)",
+    "Stage 2 - Uptrend":"rgba(0,123,255,0.2)",
+    "Stage 3 - Distribution":"rgba(255,193,7,0.2)",
+    "Stage 4 - Decline":"rgba(220,53,69,0.2)"
+  };
+  const stages=trendData.stage_durations||[];
+
+  const shapes=stages.map(s=>({
+    type:'rect',xref:'x',yref:'paper',x0:s.Start,x1:s.End,y0:0,y1:1,
+    fillcolor:stageColors[s.Stage]||'rgba(200,200,200,0.2)',opacity:0.3,layer:'below',line:{width:0}
+  }));
+
+  const traces=[
+    {x:price.map(p=>p.x),y:price.map(p=>p.y),type:'scatter',mode:'lines',name:'Price',line:{color:'#007bff',width:2},visible:true},
+    {x:dma50.map(p=>p.x),y:dma50.map(p=>p.y),type:'scatter',mode:'lines',name:'50 DMA',line:{color:'orange',dash:'dash'},visible:true},
+    {x:dma200.map(p=>p.x),y:dma200.map(p=>p.y),type:'scatter',mode:'lines',name:'200 DMA',line:{color:'red',dash:'dash'},visible:true},
+    {x:buy.map(p=>p.x),y:buy.map(p=>p.y),type:'scatter',mode:'markers',name:'Buy',marker:{color:'green',size:9,symbol:'triangle-up'},visible:true},
+    {x:sell.map(p=>p.x),y:sell.map(p=>p.y),type:'scatter',mode:'markers',name:'Sell',marker:{color:'red',size:9,symbol:'triangle-down'},visible:true},
+    {x:golden.map(p=>p.x),y:golden.map(p=>p.y),type:'scatter',mode:'markers',name:'Golden Cross',marker:{color:'black',size:11,symbol:'star'},visible:true},
+    {x:death.map(p=>p.x),y:death.map(p=>p.y),type:'scatter',mode:'markers',name:'Death Cross',marker:{color:'darkred',size:11,symbol:'x'},visible:true}
+  ];
+
+  const layout = {
+    title: `${trendData.symbol} — Interactive Trend Dashboard`,
+    shapes: shapes,
+    xaxis: {
+      title: "Date",
+      rangeselector: {
+        buttons: [
+          {count: 6, label: '6M', step: 'month', stepmode: 'backward'},
+          {count: 1, label: '1Y', step: 'year', stepmode: 'backward'},
+          {count: 3, label: '3Y', step: 'year', stepmode: 'backward'},
+          {count: 5, label: '5Y', step: 'year', stepmode: 'backward'},
+          {count: 10, label: '10Y', step: 'year', stepmode: 'backward'},
+          {step: 'all', label: 'All'}
+        ]
+      },
+      rangeslider: { visible: true }
+    },
+    yaxis: { title: "Price (₹)" },
+    paper_bgcolor: "var(--bg)",
+    plot_bgcolor: "var(--bg)",
+    font: { color: "var(--text)" },
+    hovermode: "x unified",
+    legend: { orientation: "h", y: -0.3 }
+  };
+  Plotly.newPlot('chart',traces,layout,{responsive:true});
+  Plotly.relayout('chart', {
+    'xaxis.range': [price[0].x, price[price.length - 1].x]
+  });
+  // --- toggles ---
+  const ids={
+    togglePrice:[0],
+    toggle50:[1],
+    toggle200:[2],
+    toggleBuySell:[3,4],
+    toggleCrosses:[5,6],
+    toggleStages:'shapes'
+  };
+  for(const id in ids){
+    document.getElementById(id).onclick=()=>{
+      const btn=document.getElementById(id);
+      const active=!btn.classList.contains('inactive');
+      btn.classList.toggle('inactive');
+      if(ids[id]==='shapes'){
+        const update={};
+        update.shapes=active?[]:shapes;
+        Plotly.relayout('chart',update);
+      }else{
+        const vis=active?'legendonly':true;
+        ids[id].forEach(i=>Plotly.restyle('chart','visible',vis,[i]));
+      }
+    };
+  }
+
+  // --- Timeline chart ---
+  const tl={type:'bar',orientation:'h',
+    x:stages.map(s=>s.Duration_days),
+    y:stages.map(s=>s.Stage),
+    text:stages.map(s=>`${s.Start} → ${s.End}`),
+    marker:{color:stages.map(s=>stageColors[s.Stage].replace('0.2','0.6'))},
+    hovertemplate:'%{y}<br>%{text}<br>Duration %{x} days<extra></extra>'
+  };
+  const layTL={
+    title:`${trendData.symbol} — Stage Duration Overview`,
+    paper_bgcolor:"var(--bg)",plot_bgcolor:"var(--bg)",
+    font:{color:"var(--text)"},xaxis:{title:"Duration (days)"},
+    yaxis:{automargin:true},margin:{t:60,l:150}
+  };
+  Plotly.newPlot('timeline',[tl],layTL,{responsive:true});
+}
+loadData();
+</script>
 </body>
 </html>
